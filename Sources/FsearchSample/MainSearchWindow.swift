@@ -52,7 +52,6 @@ struct SearchCommands: Commands {
 struct SearchView: View {
     @ObservedObject var model: SearchModel
     @ObservedObject var selectionState: SearchSelectionState
-    @FocusState private var queryFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,9 +87,6 @@ struct SearchView: View {
                 .accessibilityLabel(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
             }
         }
-        .onChange(of: model.focusRequest) { _ in
-            queryFocused = true
-        }
         .task { await model.runSmokeIfRequested() }
     }
 
@@ -111,16 +107,15 @@ struct SearchView: View {
             }
 
             HStack(alignment: .top, spacing: 10) {
-                TextEditor(text: $model.configuration.query)
-                    .font(.body)
+                SearchQueryEditor(
+                    text: $model.configuration.query,
+                    focusRequest: model.focusRequest
+                )
                     .frame(minWidth: 280, minHeight: 48, maxHeight: 48)
                     .overlay {
                         RoundedRectangle(cornerRadius: 5)
                             .stroke(Color.secondary.opacity(0.35))
                     }
-                    .focused($queryFocused)
-                    .accessibilityLabel("文件名")
-                    .accessibilityIdentifier("main-query")
 
                 Picker("名称匹配方式", selection: $model.configuration.nameMode) {
                     Text("包含").tag(NameMatchMode.contains)
@@ -201,6 +196,67 @@ struct SearchView: View {
             return .primary
         case .prompt, .cancelled, .noMatch:
             return .secondary
+        }
+    }
+}
+
+private struct SearchQueryEditor: NSViewRepresentable {
+    @Binding var text: String
+    let focusRequest: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView()
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.setAccessibilityLabel("文件名")
+        textView.setAccessibilityIdentifier("main-query")
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        context.coordinator.parent = self
+        if textView.string != text {
+            textView.string = text
+        }
+        if context.coordinator.lastFocusRequest != focusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            textView.window?.makeFirstResponder(textView)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: SearchQueryEditor
+        var lastFocusRequest: Int
+
+        init(parent: SearchQueryEditor) {
+            self.parent = parent
+            self.lastFocusRequest = parent.focusRequest
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
         }
     }
 }
