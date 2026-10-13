@@ -366,29 +366,33 @@ fn make_query(request: &Request) -> Result<fsearch::Query, String> {
             normalized.as_bytes().to_vec()
         });
     }
-    if request.filters.kind.is_some() {
-        query.kind = request.filters.kind;
+    apply_filters(&mut query, &request.filters)?;
+    Ok(query)
+}
+
+pub(crate) fn apply_filters(query: &mut fsearch::Query, filters: &Filters) -> Result<(), String> {
+    if filters.kind.is_some() {
+        query.kind = filters.kind;
     }
-    if !request.filters.extensions.is_empty() {
-        query.exts = request
-            .filters
+    if !filters.extensions.is_empty() {
+        query.exts = filters
             .extensions
             .iter()
             .map(|e| e.trim().trim_start_matches('.').to_lowercase().into_bytes())
             .collect();
     }
     query.size = (
-        request.filters.minimum_size.unwrap_or(query.size.0),
-        request.filters.maximum_size.unwrap_or(query.size.1),
+        filters.minimum_size.unwrap_or(query.size.0),
+        filters.maximum_size.unwrap_or(query.size.1),
     );
     query.mtime = (
-        request.filters.modified_after.unwrap_or(query.mtime.0),
-        request.filters.modified_before.unwrap_or(query.mtime.1),
+        filters.modified_after.unwrap_or(query.mtime.0),
+        filters.modified_before.unwrap_or(query.mtime.1),
     );
     if query.size.0 > query.size.1 || query.mtime.0 > query.mtime.1 {
         return Err("Invalid filter range".into());
     }
-    Ok(query)
+    Ok(())
 }
 
 fn fuzzy_query(request: &Request) -> fsearch::Query {

@@ -518,10 +518,7 @@ public actor FsearchService {
 
     public func grep(_ request: ContentSearchRequest) throws -> ContentSearchResponse {
         guard handle.isEngine else { throw FsearchError.query("样本名称服务不提供正文搜索；需要真实 Engine 模式。") }
-        guard !request.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !request.pattern.utf8.contains(0), (1...1000).contains(request.limit) else {
-            throw FsearchError.query("请输入非空文本，文件数量限制须在 1...1000 内。")
-        }
+        try request.validate()
         let json = String(decoding: try JSONEncoder().encode(request), as: UTF8.self)
         let response = try json.withCString {
             try decodeOwned(fsearch_engine_grep(handle.pointer, $0), as: ContentSearchResponse.self)

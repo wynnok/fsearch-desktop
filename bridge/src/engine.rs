@@ -26,7 +26,29 @@ struct Change {
 struct ContentRequest {
     id: String,
     pattern: String,
+    mode: ContentMode,
+    case: ContentCase,
     limit: usize,
+    scope_path: Option<String>,
+    shows_hidden: bool,
+    filters: super::Filters,
+    #[serde(default)]
+    cursor: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ContentMode {
+    Literal,
+    Regex,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ContentCase {
+    Smart,
+    Sensitive,
+    Insensitive,
 }
 
 #[derive(Serialize)]
@@ -70,17 +92,54 @@ pub unsafe extern "C" fn fsearch_engine_grep(
         let request: ContentRequest =
             serde_json::from_str(unsafe { input(json) }.map_err(|_| "Invalid content input")?)
                 .map_err(|_| "Invalid content request")?;
-        response.request_id = request.id;
-        if request.pattern.trim().is_empty() || !(1..=1000).contains(&request.limit) {
-            return Err("Content pattern must not be empty and file limit must be 1...1000");
+        response.request_id = request.id.clone();
+        if request.id.is_empty()
+            || request.id.contains('\0')
+            || request.pattern.trim().is_empty()
+            || request.pattern.contains('\0')
+            || !(1..=1000).contains(&request.limit)
+        {
+            return Err("Content request has an invalid identifier, pattern or file limit");
         }
         let h = unsafe { &*handle.cast::<EngineHandle>() };
         let mut query = fsearch::query::Query::parse("", &h.root.to_string_lossy())
             .map_err(|_| "Cannot prepare content query")?;
-        query.scope = Some(h.root.as_os_str().as_bytes().to_vec());
+        super::apply_filters(&mut query, &request.filters)
+            .map_err(|_| "Invalid content filter range")?;
+        if let Some(scope) = &request.scope_path {
+            if !scope.starts_with('/') || scope.contains('\0') {
+                return Err("Content search scope must be an absolute path");
+            }
+            let normalized = scope.trim_end_matches('/');
+            query.scope = Some(if normalized.is_empty() {
+                b"/".to_vec()
+            } else {
+                normalized.as_bytes().to_vec()
+            });
+        }
+        query
+            .scope
+            .get_or_insert_with(|| h.root.as_os_str().as_bytes().to_vec());
+        if query
+            .scope
+            .as_ref()
+            .is_some_and(|p| !Path::new(std::ffi::OsStr::from_bytes(p)).starts_with(&h.root))
+        {
+            return Err("Content search scope is outside the confined fixture");
+        }
         query.limit = request.limit;
-        let grep = fsearch::content::Grep::new(&request.pattern, fsearch::query::GrepMode::Literal)
-            .map_err(|_| "Invalid literal content pattern")?;
+        let mode = match request.mode {
+            ContentMode::Literal => fsearch::query::GrepMode::Literal,
+            ContentMode::Regex => fsearch::query::GrepMode::Regex,
+        };
+        let case = match request.case {
+            ContentCase::Smart => fsearch::Case::Smart,
+            ContentCase::Sensitive => fsearch::Case::Sensitive,
+            ContentCase::Insensitive => fsearch::Case::Insensitive,
+        };
+        let mut grep = fsearch::content::Grep::with_case(&request.pattern, mode, case)
+            .map_err(|_| "Invalid content pattern")?;
+        grep.skip = request.cursor.unwrap_or(0);
         let (found, indexed) = h
             .engine
             .grep(&query, &grep)
@@ -91,6 +150,15 @@ pub unsafe extern "C" fn fsearch_engine_grep(
         response.next = found.next;
         response.indexed = indexed;
         for file in found.files {
+            if !request.shows_hidden
+                && super::hidden_path(
+                    file.path
+                        .strip_prefix(h.root.as_os_str().as_bytes())
+                        .unwrap_or(&file.path),
+                )
+            {
+                continue;
+            }
             let path =
                 std::str::from_utf8(&file.path).map_err(|_| "Content filename is not UTF-8")?;
             let lines = file
