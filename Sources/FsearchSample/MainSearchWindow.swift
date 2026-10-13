@@ -325,6 +325,47 @@ private struct InspectorView: View {
     }
 }
 
+private final class NonAnimatingTableView: NSTableView {
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.keyCode {
+        case 125:
+            moveSelection(by: 1)
+        case 126:
+            moveSelection(by: -1)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func scrollRowToVisible(_ row: Int) {
+        guard row >= 0, row < numberOfRows,
+              let clipView = enclosingScrollView?.contentView else {
+            return
+        }
+        var target = clipView.bounds
+        let rowRect = rect(ofRow: row)
+        if rowRect.minY < target.minY {
+            target.origin.y = rowRect.minY
+        } else if rowRect.maxY > target.maxY {
+            target.origin.y = min(rowRect.maxY - target.height, max(0, bounds.height - target.height))
+        }
+        clipView.scroll(to: target.origin)
+        enclosingScrollView?.reflectScrolledClipView(clipView)
+    }
+
+    private func moveSelection(by delta: Int) {
+        guard numberOfRows > 0 else { return }
+        let current = selectedRow >= 0 ? selectedRow : 0
+        let next = max(0, min(numberOfRows - 1, current + delta))
+        selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+        scrollRowToVisible(next)
+    }
+}
+
 private struct ResultsTableView: NSViewRepresentable {
     let results: [SearchResult]
     @Binding var selection: String?
@@ -336,7 +377,7 @@ private struct ResultsTableView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let table = NSTableView()
+        let table = NonAnimatingTableView()
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = false
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle

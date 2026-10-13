@@ -747,7 +747,21 @@ final class SearchModel: ObservableObject {
         table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         try await Task.sleep(for: .milliseconds(20))
         try require(selection == results.first?.id, "Mouse-equivalent selection did not update the model")
-        table.moveDown(nil)
+        guard let downArrow = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "\u{F701}",
+            charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false,
+            keyCode: 125
+        ) else {
+            throw FsearchError.bridge("Cannot synthesize keyboard navigation")
+        }
+        table.keyDown(with: downArrow)
         try await Task.sleep(for: .milliseconds(20))
         try require(table.selectedRow == 1 && selection == results[1].id,
                     "Keyboard selection did not move to the next result")
