@@ -1,0 +1,15 @@
+.DS_Store
+.build/
+.scratch/
+DerivedData/
+build/
+dist/
+.venv/
+node_modules/
+*.xcuserstate
+xcuserdata/
+.env
+.env.*
+*.p12
+*.p8
+*.mobileprovision
