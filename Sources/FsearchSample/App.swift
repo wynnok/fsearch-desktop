@@ -11,13 +11,10 @@ import SwiftUI
 
 @MainActor
 final class SearchModel: ObservableObject {
-    @Published var query = "report" { didSet { if query != oldValue { invalidate() } } }
-    @Published var nameMode: NameMatchMode = .contains { didSet { if nameMode != oldValue { invalidate() } } }
-    @Published private(set) var sortPreference: NameSort? {
-        didSet { if sortPreference != oldValue { invalidate() } }
+    @Published var configuration = SearchConfiguration() {
+        didSet { if configuration != oldValue { invalidate() } }
     }
-    @Published var selection: String?
-    @Published var isInspectorVisible = true
+    let selectionState = SearchSelectionState()
     @Published private(set) var activity: SearchActivity = .idle
     @Published private(set) var focusRequest = 0
     @Published private var localMessage = "输入文件名后点击查询，或按 Command-Return。"
@@ -28,14 +25,30 @@ final class SearchModel: ObservableObject {
     var busy: Bool { controller?.isBusy ?? false }
     var nextCursor: SnapshotCursor? { controller?.nextCursor }
     private var snapshot: NameSnapshot? { controller?.snapshot }
+    var query: String {
+        get { configuration.query }
+        set { configuration.query = newValue }
+    }
+    var nameMode: NameMatchMode {
+        get { configuration.nameMode }
+        set { configuration.nameMode = newValue }
+    }
+    private(set) var sortPreference: NameSort? {
+        get { configuration.sortPreference }
+        set { configuration.sortPreference = newValue }
+    }
+    var sort: NameSort {
+        get { configuration.sort }
+        set { configuration.sort = newValue }
+    }
+    var selection: String? {
+        get { selectionState.selectedPath }
+        set { selectionState.selectedPath = newValue }
+    }
+    var isInspectorVisible: Bool { selectionState.isInspectorVisible }
     var selectedResult: SearchResult? {
         guard let selection else { return nil }
         return results.first { $0.id == selection }
-    }
-    var canSearch: Bool { hasQueryInput }
-    var sort: NameSort {
-        get { sortPreference ?? nameMode.defaultSort }
-        set { sortPreference = newValue }
     }
     var message: String {
         guard let controller else { return localMessage }
@@ -199,12 +212,13 @@ final class SearchModel: ObservableObject {
     }
 
     private var hasQueryInput: Bool {
-        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        configuration.hasQueryInput
     }
 
-    func sortBy(_ ascending: NameSort, descending: NameSort) {
+    @discardableResult
+    func sortBy(_ ascending: NameSort, descending: NameSort) -> Task<Void, Never> {
         sort = sort == ascending ? descending : ascending
-        Task { await search(activity: .sorting) }
+        return Task { await search(activity: .sorting) }
     }
 
     func sortBy(_ column: SearchSortColumn) {
@@ -225,7 +239,7 @@ final class SearchModel: ObservableObject {
     }
 
     func requestSearchFocus() { focusRequest += 1 }
-    func toggleInspector() { isInspectorVisible.toggle() }
+    func toggleInspector() { selectionState.toggleInspector() }
 
     // Opt-in smoke uses the same actions and real window, with project-local files.
     func runSmokeIfRequested() async {
@@ -738,14 +752,28 @@ final class SearchModel: ObservableObject {
         try require(table.selectedRow == 1 && selection == results[1].id,
                     "Keyboard selection did not move to the next result")
 
+        let selectedID = selection
+        let selectedSnapshotID = snapshot?.id
         try require(isInspectorVisible, "Inspector was not visible by default")
         try await capture("inspector-visible", under: output)
         toggleInspector()
         try await Task.sleep(for: .milliseconds(50))
-        try require(!isInspectorVisible, "Inspector did not hide")
+        try require(
+            !isInspectorVisible
+                && snapshot?.id == selectedSnapshotID
+                && !busy
+                && selection == selectedID,
+            "Inspector toggle changed search or selection state"
+        )
         try await capture("inspector-hidden", under: output)
         toggleInspector()
         try await Task.sleep(for: .milliseconds(50))
+        try require(selection == selectedID, "Inspector toggle lost selection")
+
+        let sortTask = sortBy(.ascending, descending: .descending)
+        await sortTask.value
+        try require(selection == selectedID && snapshot?.sort == .descending,
+                    "Sorting did not retain selection")
 
         let previousAppearance = NSApplication.shared.appearance
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
@@ -830,10 +858,10 @@ struct FsearchSampleApp: App {
 
     var body: some Scene {
         WindowGroup("Fsearch") {
-            SearchView(model: model)
+            SearchView(model: model, selectionState: model.selectionState)
         }
         .commands {
-            SearchCommands(model: model)
+            SearchCommands(model: model, selectionState: model.selectionState)
         }
     }
 }

@@ -1,4 +1,9 @@
-use fsearch::{index::Index, live::Live, query::Searcher, walk};
+use fsearch::{
+    index::{Index, char_bit, start_bit},
+    live::Live,
+    query::{Mode, Searcher, Token},
+    walk,
+};
 use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::os::unix::ffi::OsStrExt;
@@ -57,6 +62,7 @@ struct Request {
 #[serde(rename_all = "camelCase")]
 enum SearchMode {
     Contains,
+    Fuzzy,
     Advanced,
 }
 
@@ -197,7 +203,9 @@ unsafe fn search(
                 std::panic::resume_unwind(payload);
             }
         }
-        if matches!(request.mode, SearchMode::Contains) && request.query.trim().is_empty() {
+        if matches!(request.mode, SearchMode::Contains | SearchMode::Fuzzy)
+            && request.query.trim().is_empty()
+        {
             response.is_complete = true;
             return Ok(Vec::new());
         }
@@ -272,6 +280,60 @@ fn make_query(request: &Request) -> Result<fsearch::Query, String> {
             );
             Ok(query)
         }
+        SearchMode::Fuzzy => Ok(fuzzy_query(request)),
+    }
+}
+
+fn fuzzy_query(request: &Request) -> fsearch::Query {
+    let tokens = fuzzy_tokens(&request.query);
+    let alternate = request
+        .ordinary_forms
+        .iter()
+        .find(|form| form.as_str() != request.query)
+        .map(|form| fuzzy_tokens(form))
+        .filter(|alternate| alternate.len() == tokens.len());
+    fsearch::Query {
+        tokens,
+        size: (0, u64::MAX),
+        mtime: (0, u32::MAX),
+        limit: 50,
+        alt: alternate,
+        ..fsearch::Query::default()
+    }
+}
+
+fn fuzzy_tokens(query: &str) -> Vec<Token> {
+    query
+        .split_whitespace()
+        // `/` cannot occur in a filename. Keep it as a structural path
+        // separator without invoking Query::parse or its scope/glob rules.
+        .flat_map(|word| word.split('/').filter(|part| !part.is_empty()))
+        .map(fuzzy_token)
+        .collect()
+}
+
+fn fuzzy_token(word: &str) -> Token {
+    let text = word
+        .bytes()
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let mask = text.iter().fold(0, |mask, &byte| mask | char_bit(byte));
+    let edits = (text.len() >= 5) as u32 + (text.len() >= 8) as u32;
+    let rest = text
+        .iter()
+        .skip(1)
+        .fold(0, |mask, &byte| mask | char_bit(byte));
+    let start = if edits > 0 { start_bit(text[0]) } else { 0 };
+    Token {
+        text,
+        mask,
+        mode: Mode::Fuzzy,
+        negate: false,
+        edits,
+        deep: false,
+        start,
+        rest,
+        under: false,
     }
 }
 

@@ -29,7 +29,7 @@ public struct NameSearchRequest: Codable, Sendable {
         case .contains:
             return SearchRequest(id: id, query: query, mode: .contains)
         case .fuzzy:
-            return SearchRequest(id: id, query: query, mode: .advanced)
+            return SearchRequest(id: id, query: query, mode: .fuzzy)
         case .prefix:
             return SearchRequest(id: id, query: regexQuery(pattern: "^(?:\(literalAlternatives))"),
                                  mode: .advanced)

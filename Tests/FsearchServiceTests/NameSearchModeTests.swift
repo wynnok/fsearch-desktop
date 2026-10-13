@@ -60,6 +60,39 @@ final class NameSearchModeTests: XCTestCase {
         }
     }
 
+    func testFuzzyTreatsQueryLanguageCharactersAsNameData() async throws {
+        try await withSample([
+            "type:doc*?.txt",
+            "quote \"draft\".txt",
+            "bang!name.txt",
+            "^caret$name.txt",
+            "a/b.txt"
+        ]) { root in
+            let service = try FsearchService(sampleDirectory: root)
+            let cases = [
+                ("type:doc*?.txt", "type:doc*?.txt"),
+                ("quote \"draft\".txt", "quote \"draft\".txt"),
+                ("bang!name.txt", "bang!name.txt"),
+                ("^caret$name.txt", "^caret$name.txt"),
+                ("a/b.txt", "b.txt")
+            ]
+
+            for (query, expectedName) in cases {
+                do {
+                    let snapshot = try await service.snapshot(
+                        NameSearchRequest(query: query, mode: .fuzzy)
+                    )
+                    let names = try snapshot.page(pageSize: 20).results.map {
+                        URL(fileURLWithPath: $0.path).lastPathComponent
+                    }
+                    XCTAssertTrue(names.contains(expectedName), "\(query) did not match \(expectedName): \(names)")
+                } catch {
+                    XCTFail("\(query) failed instead of matching \(expectedName): \(error)")
+                }
+            }
+        }
+    }
+
     func testLiteralNameModesPreserveQueryLanguagePunctuation() async throws {
         try await withSample([
             "type:doc.txt",

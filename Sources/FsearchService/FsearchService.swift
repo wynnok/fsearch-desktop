@@ -3,6 +3,7 @@ import Foundation
 
 public enum SearchMode: String, Codable, Sendable {
     case contains
+    case fuzzy
     case advanced
 }
 

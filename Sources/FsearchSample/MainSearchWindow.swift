@@ -27,6 +27,7 @@ enum SearchSortColumn: String {
 
 struct SearchCommands: Commands {
     @ObservedObject var model: SearchModel
+    @ObservedObject var selectionState: SearchSelectionState
 
     var body: some Commands {
         CommandMenu("搜索") {
@@ -40,8 +41,8 @@ struct SearchCommands: Commands {
                 .keyboardShortcut(.cancelAction)
                 .disabled(!model.busy)
             Divider()
-            Button(model.isInspectorVisible ? "隐藏检查器" : "显示检查器") {
-                model.toggleInspector()
+            Button(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器") {
+                selectionState.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
         }
@@ -50,6 +51,7 @@ struct SearchCommands: Commands {
 
 struct SearchView: View {
     @ObservedObject var model: SearchModel
+    @ObservedObject var selectionState: SearchSelectionState
     @FocusState private var queryFocused: Bool
 
     var body: some View {
@@ -59,7 +61,7 @@ struct SearchView: View {
             HSplitView {
                 resultsPane
                     .frame(minWidth: 520, idealWidth: 700)
-                if model.isInspectorVisible {
+                if selectionState.isInspectorVisible {
                     InspectorView(result: model.selectedResult)
                         .frame(minWidth: 240, idealWidth: 300)
                 }
@@ -78,12 +80,12 @@ struct SearchView: View {
                 .accessibilityLabel("聚焦搜索")
 
                 Button {
-                    model.toggleInspector()
+                    selectionState.toggleInspector()
                 } label: {
                     Image(systemName: "sidebar.right")
                 }
-                .help(model.isInspectorVisible ? "隐藏检查器" : "显示检查器")
-                .accessibilityLabel(model.isInspectorVisible ? "隐藏检查器" : "显示检查器")
+                .help(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
+                .accessibilityLabel(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
             }
         }
         .onChange(of: model.focusRequest) { _ in
@@ -109,7 +111,7 @@ struct SearchView: View {
             }
 
             HStack(alignment: .top, spacing: 10) {
-                TextEditor(text: $model.query)
+                TextEditor(text: $model.configuration.query)
                     .font(.body)
                     .frame(minWidth: 280, minHeight: 48, maxHeight: 48)
                     .overlay {
@@ -120,7 +122,7 @@ struct SearchView: View {
                     .accessibilityLabel("文件名")
                     .accessibilityIdentifier("main-query")
 
-                Picker("名称匹配方式", selection: $model.nameMode) {
+                Picker("名称匹配方式", selection: $model.configuration.nameMode) {
                     Text("包含").tag(NameMatchMode.contains)
                     Text("模糊").tag(NameMatchMode.fuzzy)
                     Text("前缀").tag(NameMatchMode.prefix)
@@ -166,7 +168,7 @@ struct SearchView: View {
         VStack(spacing: 0) {
             ResultsTableView(
                 results: model.results,
-                selection: $model.selection,
+                selection: $selectionState.selectedPath,
                 sort: model.sort,
                 onSort: model.sortBy
             )
