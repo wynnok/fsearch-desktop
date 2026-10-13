@@ -1,0 +1,58 @@
+name: Upstream release check
+
+on:
+  schedule:
+    - cron: "23 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-release-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Prepare result directory
+        run: mkdir -p .build/upstream-release-check
+
+      - name: Check upstream formal release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT_FILE: .build/upstream-release-check/ci-result.json
+          SUMMARY_FILE: .build/upstream-release-check/ci-summary.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set +e
+          bash scripts/check-upstream-release.sh \
+            --output "$RESULT_FILE" \
+            --summary "$SUMMARY_FILE" \
+            --run-url "$RUN_URL"
+          check_status=$?
+          set -e
+
+          if [[ -f "$SUMMARY_FILE" ]]; then
+            cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f "$RESULT_FILE" ]]; then
+            jq . "$RESULT_FILE"
+          fi
+
+          exit "$check_status"
+
+      - name: Upload release check evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-release-check
+          path: .build/upstream-release-check/
+          if-no-files-found: error
+          retention-days: 30
