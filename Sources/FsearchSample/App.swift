@@ -12,27 +12,71 @@ import SwiftUI
 @MainActor
 final class SearchModel: ObservableObject {
     @Published var query = "report" { didSet { if query != oldValue { invalidate() } } }
-    @Published var mode: SearchMode = .contains { didSet { if mode != oldValue { invalidate() } } }
-    @Published var sort: NameSort = .ascending { didSet { if sort != oldValue { invalidate() } } }
+    @Published var nameMode: NameMatchMode = .contains { didSet { if nameMode != oldValue { invalidate() } } }
+    @Published private(set) var sortPreference: NameSort? {
+        didSet { if sortPreference != oldValue { invalidate() } }
+    }
     @Published var selection: String?
-    @Published private var localMessage = "输入文件名后点击查询，或按 ⌘Return。"
+    @Published var isInspectorVisible = true
+    @Published private(set) var activity: SearchActivity = .idle
+    @Published private(set) var focusRequest = 0
+    @Published private var localMessage = "输入文件名后点击查询，或按 Command-Return。"
     private(set) var controller: SnapshotQueryController?
     private var observation: AnyCancellable?
+    private var searchGeneration = 0
     var results: [SearchResult] { controller?.results ?? [] }
     var busy: Bool { controller?.isBusy ?? false }
     var nextCursor: SnapshotCursor? { controller?.nextCursor }
     private var snapshot: NameSnapshot? { controller?.snapshot }
+    var selectedResult: SearchResult? {
+        guard let selection else { return nil }
+        return results.first { $0.id == selection }
+    }
+    var canSearch: Bool { hasQueryInput }
+    var sort: NameSort {
+        get { sortPreference ?? nameMode.defaultSort }
+        set { sortPreference = newValue }
+    }
     var message: String {
         guard let controller else { return localMessage }
         switch controller.phase {
         case .idle: return localMessage
-        case .loading: return "查询 / 排序中…旧行仅供选择；数量和顺序尚未最终确定。"
+        case .loading:
+            return activity == .sorting
+                ? "排序中…旧行仅供选择；数量和顺序尚未最终确定。"
+                : "查询中…旧行仅供选择；数量和顺序尚未最终确定。"
         case .cancelled: return "查询已取消，可以重新查询。旧行不代表当前结果。"
         case .failed(let error): return "查询失败：\(error)。可修正后重试；旧行不代表当前结果。"
-        case .partial: return "部分结果：已显示 \(results.count) 个 · 仅已载入排序，总数未知"
+        case .partial:
+            return "部分结果：已显示 \(results.count) 个 · 仅已载入排序，总数未知"
         case .complete:
             guard let total = controller.totalCount else { return "查询尚未完成" }
-            return total == 0 ? "无匹配" : "已显示 \(results.count) / \(total) 个匹配 · \(sortTitle)全局排序 \(sort.ascendingDirection ? "↑" : "↓")"
+            if total == 0 { return "无匹配" }
+            return "已显示 \(results.count) / \(total) 个匹配 · \(sortDescription)"
+        }
+    }
+    var paginationMessage: String? {
+        guard let controller else { return nil }
+        switch controller.phase {
+        case .partial:
+            return "部分结果"
+        case .complete:
+            guard let total = controller.totalCount, total > 0 else { return nil }
+            return nextCursor == nil ? "已载入全部 \(total) 个结果" : "还可继续载入同一快照"
+        default:
+            return nil
+        }
+    }
+    var statusKind: SearchStatusKind {
+        guard let controller else { return .prompt }
+        switch controller.phase {
+        case .idle: return .prompt
+        case .loading: return activity == .sorting ? .sorting : .querying
+        case .cancelled: return .cancelled
+        case .failed: return .error
+        case .partial: return .partial
+        case .complete:
+            return controller.totalCount == 0 ? .noMatch : .complete
         }
     }
     private var service: FsearchService?
@@ -94,6 +138,8 @@ final class SearchModel: ObservableObject {
     }
 
     private func invalidate() {
+        searchGeneration += 1
+        activity = .idle
         controller?.invalidate()
         localMessage = "条件已改变，请重新查询。旧行不代表当前结果。"
     }
@@ -101,10 +147,31 @@ final class SearchModel: ObservableObject {
     func submit() { Task { await search() } }
     func refresh() { Task { await search(refresh: !isEngineMode) } }
 
-    private func search(refresh: Bool = false, maximumResults: Int? = nil) async {
+    private func search(
+        refresh: Bool = false,
+        maximumResults: Int? = nil,
+        activity requestedActivity: SearchActivity = .querying
+    ) async {
         guard let controller else { return }
-        await controller.query(SearchRequest(query: query, mode: mode), sort: sort,
-                               maximumResults: maximumResults, pageSize: pageSize, refresh: refresh)
+        searchGeneration += 1
+        let generation = searchGeneration
+        guard hasQueryInput else {
+            activity = .idle
+            controller.invalidate()
+            localMessage = "请输入文件名后查询；空输入不会列出全部文件。"
+            return
+        }
+        activity = requestedActivity
+        await controller.query(
+            NameSearchRequest(query: query, mode: nameMode),
+            sort: sortPreference,
+            maximumResults: maximumResults,
+            pageSize: pageSize,
+            refresh: refresh
+        )
+        if generation == searchGeneration {
+            activity = .idle
+        }
     }
 
     func loadMore() {
@@ -117,18 +184,48 @@ final class SearchModel: ObservableObject {
 
     var sortTitle: String {
         switch sort {
+        case .relevance: "关联性"
         case .ascending, .descending: "名称"
         case .sizeAscending, .sizeDescending: "索引大小"
         case .modifiedAscending, .modifiedDescending: "修改时间"
         }
     }
 
-    func sortBy(_ ascending: NameSort, descending: NameSort) {
-        sort = sort == ascending ? descending : ascending
-        submit()
+    private var sortDescription: String {
+        if sort == .relevance {
+            return "关联性排序"
+        }
+        return "\(sortTitle)全局排序 \(sort.ascendingDirection ? "↑" : "↓")"
     }
 
-    func cancel() { controller?.cancel() }
+    private var hasQueryInput: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func sortBy(_ ascending: NameSort, descending: NameSort) {
+        sort = sort == ascending ? descending : ascending
+        Task { await search(activity: .sorting) }
+    }
+
+    func sortBy(_ column: SearchSortColumn) {
+        switch column {
+        case .name:
+            sortBy(.ascending, descending: .descending)
+        case .size:
+            sortBy(.sizeAscending, descending: .sizeDescending)
+        case .modified:
+            sortBy(.modifiedAscending, descending: .modifiedDescending)
+        }
+    }
+
+    func cancel() {
+        searchGeneration += 1
+        activity = .idle
+        controller?.cancel()
+    }
+
+    func requestSearchFocus() { focusRequest += 1 }
+    func toggleInspector() { isInspectorVisible.toggle() }
 
     // Opt-in smoke uses the same actions and real window, with project-local files.
     func runSmokeIfRequested() async {
@@ -151,33 +248,44 @@ final class SearchModel: ObservableObject {
         defer { try? cleanupSmokeFixtures() }
         do {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-            let cases: [(String, String, SearchMode, [String])] = [
-                ("empty", "", .contains, []),
-                ("blank", " \n", .contains, []),
+            let cases: [(String, String, NameMatchMode, [String])] = [
                 ("punctuation", "type:", .contains, ["type:doc.txt"]),
                 ("spaces", "draft notes", .contains, ["draft notes.txt"]),
                 ("quotes", "\"draft\"", .contains, ["quote \"draft\".txt"]),
                 ("newline", "line\nbreak", .contains, ["line\nbreak.txt"]),
                 ("unicode", "笔记😀", .contains, ["笔记😀.md"]),
                 ("normalization", "café", .contains, ["cafe\u{301}.txt"]),
+                ("case-insensitive", "DEMO", .contains, ["demo1.txt", "demo2.txt"]),
+                ("fuzzy", "dmeo10.txt", .fuzzy, ["demo10.txt"]),
+                ("prefix", "demo1", .prefix, ["demo1.txt", "demo10.txt"]),
+                ("suffix", "0.txt", .suffix, ["demo10.txt", "demo20.txt"]),
+                ("whole-name", "demo10.txt", .wholeName, ["demo10.txt"]),
                 ("no-match", "absent-fixture-name", .contains, [])
             ]
             for (name, input, searchMode, expected) in cases {
                 query = input
-                mode = searchMode
+                nameMode = searchMode
+                sortPreference = nil
                 await search()
                 try require(filenames == expected, "Native query state failed: \(name)")
                 try require(snapshot?.isComplete == true, "Native query completeness failed")
                 try await capture(name, under: output)
             }
-            query = "re:["
-            mode = .advanced
+
+            query = ""
+            nameMode = .contains
             await search()
-            try require(snapshot == nil && message.hasPrefix("查询失败"), "Advanced error was not shown")
+            try require(snapshot == nil && message.contains("空输入不会列出全部文件"),
+                        "Empty input queried all files")
+            try await capture("empty", under: output)
+
+            query = "demo"
+            await search(maximumResults: 0)
+            try require(snapshot == nil && message.hasPrefix("查询失败"), "Service error was not shown")
             try await capture("failure", under: output)
 
             query = "demo"
-            mode = .contains
+            nameMode = .contains
             sort = .ascending
             await search()
             try require(snapshot?.totalCount == 5, "Native total count failed")
@@ -190,6 +298,7 @@ final class SearchModel: ObservableObject {
             try require(filenames == ["demo1.txt", "demo2.txt", "demo3.txt", "demo10.txt", "demo20.txt"] && nextCursor == nil,
                         "Native final page failed")
             try await capture("page-final", under: output)
+            try await runWindowInteractionSmoke(under: output)
 
             sort = .descending
             await search()
@@ -539,8 +648,11 @@ final class SearchModel: ObservableObject {
         }.value
         try await service.refreshSample()
         sort = .ascending
-        query = "demo"
-        await search()
+        query = "entry"
+        let sortStart = Task { await search(activity: .sorting) }
+        while activity != .sorting { await Task.yield() }
+        try require(message.contains("排序中"), "Sorting state was not visible")
+        await sortStart.value
         selection = results.first?.id
         let selected = selection
         query = "entry"
@@ -589,6 +701,66 @@ final class SearchModel: ObservableObject {
         try Data(metrics.utf8).write(to: output.appendingPathComponent("responsiveness.txt"))
         print(metrics, terminator: "")
         try await capture("responsive-latest", under: output)
+    }
+
+    private func runWindowInteractionSmoke(under output: URL) async throws {
+        guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }),
+              let root = window.contentView,
+              let table = firstView(of: NSTableView.self, in: root),
+              let editor = firstView(of: NSTextView.self, in: root), editor.isEditable else {
+            throw FsearchError.bridge("Native interaction window is unavailable")
+        }
+
+        guard let searchMenu = NSApplication.shared.mainMenu?.items.first(where: { $0.title == "搜索" }),
+              let submenu = searchMenu.submenu else {
+            throw FsearchError.bridge("Native search menu is unavailable")
+        }
+        let menuTitles = Set(submenu.items.map(\.title))
+        try require(
+            menuTitles.isSuperset(of: ["聚焦搜索", "查询", "刷新", "取消"]) == true,
+            "Native search menu is incomplete"
+        )
+
+        requestSearchFocus()
+        for _ in 0..<50 where window.firstResponder !== editor {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try require(window.firstResponder === editor, "Search focus action did not focus the name editor")
+        try require(editor.accessibilityLabel() == "文件名", "Name editor has no VoiceOver label")
+
+        try require(table.accessibilityLabel() == "搜索结果", "Results table has no VoiceOver label")
+        window.makeFirstResponder(table)
+        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        try await Task.sleep(for: .milliseconds(20))
+        try require(selection == results.first?.id, "Mouse-equivalent selection did not update the model")
+        table.moveDown(nil)
+        try await Task.sleep(for: .milliseconds(20))
+        try require(table.selectedRow == 1 && selection == results[1].id,
+                    "Keyboard selection did not move to the next result")
+
+        try require(isInspectorVisible, "Inspector was not visible by default")
+        try await capture("inspector-visible", under: output)
+        toggleInspector()
+        try await Task.sleep(for: .milliseconds(50))
+        try require(!isInspectorVisible, "Inspector did not hide")
+        try await capture("inspector-hidden", under: output)
+        toggleInspector()
+        try await Task.sleep(for: .milliseconds(50))
+
+        let previousAppearance = NSApplication.shared.appearance
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        try await capture("dark-mode", under: output)
+        NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        try await capture("light-mode", under: output)
+        NSApplication.shared.appearance = previousAppearance
+    }
+
+    private func firstView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
+        if let match = view as? T { return match }
+        for child in view.subviews {
+            if let match = firstView(of: type, in: child) { return match }
+        }
+        return nil
     }
 
     private var filenames: [String] { results.map { URL(fileURLWithPath: $0.path).lastPathComponent } }
@@ -651,83 +823,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct SearchView: View {
-    @ObservedObject var model: SearchModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(model.isEngineMode ? "真实 Engine · 受限验证模式" : "样本验证模式 · 未启动真实 Engine")
-                .font(.headline)
-            Text(model.isEngineMode ? "Fsearch 0.2.1 · 独立索引 · 默认名称与内容索引 · 就绪不代表全盘覆盖" : "Fsearch 0.2.1 · 仅查询指定样本目录及其子目录")
-                .foregroundStyle(.secondary)
-            HStack {
-                Picker("输入方式", selection: $model.mode) {
-                    Text("名称包含").tag(SearchMode.contains)
-                    Text("高级查询").tag(SearchMode.advanced)
-                }
-                .frame(width: 230)
-            }
-            HStack {
-                TextEditor(text: $model.query)
-                    .font(.body)
-                    .frame(height: 52)
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.3)))
-                    .accessibilityLabel("文件名")
-                    .accessibilityIdentifier("sample-query")
-                Button("查询") { model.submit() }
-                    .keyboardShortcut(.return, modifiers: .command)
-                Button(model.isEngineMode ? "刷新查询" : "刷新样本") { model.refresh() }.disabled(model.busy)
-                if model.busy { Button("取消") { model.cancel() } }
-            }
-            Text(model.mode == .contains ? "普通输入按文件名包含匹配，标点、空格和换行保持原义；⌘Return 查询。" : "高级输入使用 Fsearch 查询语法；输入错误可修正后重试。")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(model.message)
-                .textSelection(.enabled)
-                .accessibilityIdentifier("query-status")
-            HStack {
-                Button("名称\(model.sortTitle == "名称" ? (model.sort.ascendingDirection ? " ↑" : " ↓") : "")") {
-                    model.sortBy(.ascending, descending: .descending)
-                }
-                Button("索引大小\(model.sortTitle == "索引大小" ? (model.sort.ascendingDirection ? " ↑" : " ↓") : "")") {
-                    model.sortBy(.sizeAscending, descending: .sizeDescending)
-                }
-                Button("修改时间\(model.sortTitle == "修改时间" ? (model.sort.ascendingDirection ? " ↑" : " ↓") : "")") {
-                    model.sortBy(.modifiedAscending, descending: .modifiedDescending)
-                }
-            }
-            Text("索引大小是索引记录值，可能存在取整或变化滞后；不是实际大小、目录汇总或磁盘占用。")
-                .font(.caption).foregroundStyle(.secondary)
-            List(model.results, selection: $model.selection) { result in
-                VStack(alignment: .leading) {
-                    Text(URL(fileURLWithPath: result.path).lastPathComponent)
-                        .font(.headline)
-                    Text(result.path).font(.caption).foregroundStyle(.secondary)
-                    Text("索引大小：\(result.indexedSize) 字节 · 类型：\(result.kind) · 分数：\(result.score)")
-                        .font(.caption)
-                    Text("修改时间：\(Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted())")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(result.id)
-                .textSelection(.enabled)
-            }
-            Button("继续载入同一快照") { model.loadMore() }
-                .disabled(model.nextCursor == nil || model.busy)
-        }
-        .padding(20)
-        .frame(minWidth: 860, minHeight: 600)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .task { await model.runSmokeIfRequested() }
-    }
-}
-
 @main
 struct FsearchSampleApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     @StateObject private var model = SearchModel()
 
     var body: some Scene {
-        WindowGroup("Fsearch 样本验证") {
+        WindowGroup("Fsearch") {
             SearchView(model: model)
+        }
+        .commands {
+            SearchCommands(model: model)
         }
     }
 }

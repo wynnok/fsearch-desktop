@@ -1,6 +1,7 @@
 import Foundation
 
 public enum NameSort: String, Sendable {
+    case relevance
     case ascending
     case descending
     case sizeAscending
@@ -10,7 +11,7 @@ public enum NameSort: String, Sendable {
 
     public var ascendingDirection: Bool {
         switch self {
-        case .ascending, .sizeAscending, .modifiedAscending: true
+        case .relevance, .ascending, .sizeAscending, .modifiedAscending: true
         case .descending, .sizeDescending, .modifiedDescending: false
         }
     }
@@ -59,9 +60,15 @@ public struct NameSnapshot: Sendable {
         requestID = response.requestID
         isComplete = response.isComplete
         self.sort = sort
+        if sort == .relevance {
+            results = response.results
+            return
+        }
         results = response.results.sorted { lhs, rhs in
             let comparison: ComparisonResult
             switch sort {
+            case .relevance:
+                comparison = .orderedSame
             case .ascending, .descending:
                 let leftName = URL(fileURLWithPath: lhs.path).lastPathComponent
                 let rightName = URL(fileURLWithPath: rhs.path).lastPathComponent

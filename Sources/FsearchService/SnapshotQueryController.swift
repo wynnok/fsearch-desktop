@@ -71,6 +71,18 @@ public final class SnapshotQueryController: ObservableObject {
         if currentGeneration == generation { task = nil }
     }
 
+    public func query(_ request: NameSearchRequest, sort: NameSort? = nil,
+                      maximumResults: Int? = nil, pageSize: Int = 50,
+                      refresh: Bool = false) async {
+        await query(
+            request.bridgeRequest(),
+            sort: sort ?? request.mode.defaultSort,
+            maximumResults: maximumResults,
+            pageSize: pageSize,
+            refresh: refresh
+        )
+    }
+
     public func loadMore(pageSize: Int = 50) throws {
         guard let snapshot, let nextCursor, !isBusy else { return }
         let page = try snapshot.page(after: nextCursor, pageSize: pageSize)
