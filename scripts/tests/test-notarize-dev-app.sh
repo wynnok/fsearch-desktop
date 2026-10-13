@@ -26,6 +26,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>FsearchDevelopmentBuild</key><true/>
 <key>FsearchPackageStatus</key><string>development-unnotarized</string>
 <key>FsearchNotarized</key><false/>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
 </dict></plist>
 PLIST
 printf '#!/bin/bash\nexit 0\n' > "$APP/Contents/MacOS/FsearchSample"
@@ -93,12 +94,14 @@ MOCK
 chmod +x "$TEST_ROOT/bin/driver"
 for command in security file lipo codesign xcrun spctl; do ln -s driver "$TEST_ROOT/bin/$command"; done
 SOURCE_HASH="$(shasum -a 256 "$APP/Contents/Info.plist")"
-for scenario in sign-failure network-failure malformed-response rejected staple-failure gatekeeper-failure; do
+for scenario in sign-failure network-failure malformed-response rejected staple-failure gatekeeper-failure version-mismatch; do
     log="$TEST_ROOT/$scenario.log"
     trace="$TEST_ROOT/$scenario.trace"
+    arguments=(--app "$APP")
+    if [[ "$scenario" == version-mismatch ]]; then arguments+=(--release-version 0.2.0); fi
     if PATH="$TEST_ROOT/bin:$PATH" MOCK_CASE="$scenario" MOCK_TRACE="$trace" \
         FSEARCH_SIGNING_IDENTITY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA FSEARCH_NOTARY_PROFILE=controlled-profile \
-        bash scripts/notarize-dev-app.sh --app "$APP" > "$log" 2>&1; then
+        bash scripts/notarize-dev-app.sh "${arguments[@]}" > "$log" 2>&1; then
         echo "Controlled failure unexpectedly passed: $scenario" >&2; exit 1
     fi
     directory="$(sed -n 's/^Signing validation records: //p' "$log")"

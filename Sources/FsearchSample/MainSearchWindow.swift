@@ -40,6 +40,7 @@ struct SearchCommands: Commands {
                 .keyboardShortcut("r", modifiers: .command)
             Button("权限与索引重新检查") { model.recheckPermissions() }
             Button("导出诊断报告…") { model.exportDiagnostics() }
+            Button("文本内容搜索…") { model.showsContentSearch = true }
             Button("取消") { model.cancel() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(!model.busy)

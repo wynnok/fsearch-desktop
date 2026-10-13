@@ -42,6 +42,10 @@ import FsearchService
         let status = try await service.status()
         try require(status.ready && status.engineValidated && status.mode == "engine", "Engine did not become ready")
         print("Confinement installed before Engine; outside sentinel read denied; name index ready")
+        if args[2] == "content" {
+            try await ContentCheck.run(service: service, fixture: fixture)
+            return
+        }
             #if DEBUG
             do {
                 try await service.injectEngineQueryPanic()

@@ -7,12 +7,15 @@ import FsearchService
 #endif
 import Foundation
 import Darwin
+import Quartz
 import SwiftUI
 
 @MainActor
 final class SearchModel: ObservableObject {
     let updates = ManualUpdateState()
     @Published var showsUpdates = false
+    @Published var showsContentSearch = false
+    lazy var contentSearch = ContentSearchState(service: service)
     @Published private(set) var engineVersion = "尚未读取"
     @Published private(set) var selectionMessage: String?
     @Published private(set) var applicationMessage: String?
@@ -123,6 +126,8 @@ final class SearchModel: ObservableObject {
     private(set) var isEngineMode = false
     private var engineWorkspace: URL?
     private var engineSmokeStarted = false
+    private var contentWorkspace = false
+    private var contentSmokeRequested = false
     private(set) var isPermissionProbeMode = false
     private var permissionProbeArguments: PermissionProbeArguments?
     private var permissionProbeStarted = false
@@ -130,7 +135,8 @@ final class SearchModel: ObservableObject {
 
     init(arguments: [String] = CommandLine.arguments, preferences: LocalPreferences? = nil) {
         let isValidation = arguments.contains("--smoke") || arguments.contains("--engine-smoke")
-            || arguments.contains("--permission-probe")
+            || arguments.contains("--permission-probe") || arguments.contains("--content-smoke")
+            || arguments.contains("--content-workspace")
         preferencesStore = isValidation ? nil : (preferences ?? LocalPreferences.applicationStore)
         restoringPreferences = true
         preferencesStore?.restore(configuration: &configuration, selection: selectionState)
@@ -144,6 +150,17 @@ final class SearchModel: ObservableObject {
             return
         }
         do {
+            if arguments.count == 3, ["--content-smoke", "--content-workspace"].contains(arguments[1]) {
+                let workspace = URL(fileURLWithPath: arguments[2]).resolvingSymlinksInPath()
+                engineWorkspace = workspace
+                isEngineMode = true
+                contentWorkspace = true
+                contentSmokeRequested = arguments[1] == "--content-smoke"
+                service = try FsearchService(confinedEngineDirectory: workspace.appendingPathComponent("fixtures"),
+                                            indexDirectory: workspace.appendingPathComponent("index"))
+                connectController()
+                return
+            }
             if arguments.count == 5, arguments[1] == "--permission-probe" {
                 permissionProbeArguments = PermissionProbeArguments(
                     phase: arguments[2],
@@ -369,6 +386,13 @@ final class SearchModel: ObservableObject {
 
     // Opt-in smoke uses the same actions and real window, with project-local files.
     func runSmokeIfRequested() async {
+        if contentWorkspace {
+            if contentSmokeRequested && !engineSmokeStarted {
+                engineSmokeStarted = true
+                Task { await runContentSmoke() }
+            }
+            return
+        }
         if isPermissionProbeMode {
             guard !permissionProbeStarted else { return }
             permissionProbeStarted = true
@@ -758,6 +782,55 @@ final class SearchModel: ObservableObject {
         try encoder.encode(evidence).write(to: url, options: .atomic)
     }
 
+    private func runContentSmoke() async {
+        do {
+            guard let service, let workspace = engineWorkspace else { throw FsearchError.bridge("Content Engine unavailable") }
+            for _ in 0..<200 {
+                if try await service.status().ready { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            contentSearch.pattern = "银河😀"
+            for _ in 0..<200 {
+                await contentSearch.search()
+                if contentSearch.response?.files.count == 1 { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard let response = contentSearch.response, let file = response.files.first,
+                  file.lines.map(\.text) == ["银河😀 first", "银河😀 second"],
+                  response.displayedOccurrences == 2 else { throw FsearchError.bridge("Native content grouping failed") }
+            guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
+                throw FsearchError.bridge("Content window unavailable")
+            }
+            showsContentSearch = true
+            for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
+            guard let sheet = window.attachedSheet else { throw FsearchError.bridge("Content sheet unavailable") }
+            let output = workspace.appendingPathComponent("index/content-smoke")
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try await capture("content-results", under: output, window: sheet)
+            let actions = FileActionState()
+            actions.open(path: file.path)
+            for _ in 0..<100 where actions.openedURL == nil && actions.message == nil { try await Task.sleep(for: .milliseconds(30)) }
+            try require(actions.openedURL?.path == file.path, "Content file did not open")
+            actions.togglePreview(path: file.path)
+            try require(actions.previewURL?.path == file.path && QLPreviewPanel.shared()?.isVisible == true, "Content file preview failed")
+            actions.updatePreview(path: nil)
+            let diagnostic = output.appendingPathComponent("diagnostics.json")
+            try DiagnosticReport(status: try await service.status()).write(to: diagnostic)
+            try require(!String(contentsOf: diagnostic, encoding: .utf8).contains("银河"), "Content leaked into diagnostics")
+            contentSearch.pattern = "absent-content-pattern"
+            await contentSearch.search()
+            try require(contentSearch.response?.files.isEmpty == true, "Native no-match failed")
+            showsContentSearch = false
+            for _ in 0..<100 where window.attachedSheet != nil { try await Task.sleep(for: .milliseconds(20)) }
+            try require(window.attachedSheet == nil, "Content sheet did not close")
+            print("Native content grouping, Unicode/CRLF, open, Quick Look, no-match and diagnostic exclusion: passed")
+            NSApplication.shared.terminate(nil)
+        } catch {
+            fputs("Native content smoke failed: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+
     private func runEngineSmoke() async {
         do {
             guard let service, let workspace = engineWorkspace else { throw FsearchError.bridge("Engine unavailable") }
@@ -1075,6 +1148,9 @@ struct FsearchSampleApp: App {
                 .background(MainWindowAttachment())
                 .sheet(isPresented: $model.showsUpdates) {
                     UpdateView(state: model.updates, engineVersion: model.engineVersion)
+                }
+                .sheet(isPresented: $model.showsContentSearch) {
+                    ContentSearchView(state: model.contentSearch)
                 }
         }
         .commands {

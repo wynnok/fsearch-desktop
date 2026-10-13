@@ -9,10 +9,11 @@ source "$PROJECT_ROOT/scripts/dev-dmg-common.sh"
     echo 'Missing FSEARCH_SIGNING_IDENTITY or FSEARCH_NOTARY_PROFILE; T28 remains unverified.' >&2
     exit 2
 }
-[[ $# == 2 && "$1" == --app && -d "$2" ]] || {
+[[ ( $# == 2 || ( $# == 4 && "$3" == --release-version ) ) && "$1" == --app && -d "$2" ]] || {
     echo 'Usage: bash scripts/notarize-dev-app.sh --app <verified development .app>' >&2; exit 2
 }
 INPUT_APP="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+RELEASE_VERSION="${4:-}"
 mkdir -p "$PROJECT_ROOT/.build/signing"
 RUN="$(mktemp -d "$PROJECT_ROOT/.build/signing/run.XXXXXX")"
 chmod 700 "$RUN"
@@ -64,7 +65,11 @@ done
 run source-signature codesign --verify --deep --strict "$INPUT_APP"
 [[ "$(lipo -archs "$INPUT_APP/Contents/MacOS/FsearchSample" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')" == 'arm64 x86_64' ]] || fail 'Expected a Universal development application.'
 # Keep identity values and keychain command output out of logs.
-run signing-identity security find-identity -v -p codesigning
+if [[ -n "${FSEARCH_SIGNING_KEYCHAIN:-}" ]]; then
+    run signing-identity security find-identity -v -p codesigning "$FSEARCH_SIGNING_KEYCHAIN"
+else
+    run signing-identity security find-identity -v -p codesigning
+fi
 ruby - "$TEMP/stdout" "$FSEARCH_SIGNING_IDENTITY" <<'RUBY' || fail 'No matching valid Developer ID Application identity.'
 rows = File.readlines(ARGV[0])
 identity = ARGV[1]
@@ -73,21 +78,40 @@ exit(rows.any? { |row| row.include?('"Developer ID Application:') &&
 RUBY
 
 APP="$RUN/Fsearch Desktop Development.app"
+if [[ -n "$RELEASE_VERSION" ]]; then
+    [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid release version.'
+    [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" == "$RELEASE_VERSION" ]] || fail 'Release version differs from the built application.'
+    APP="$RUN/Fsearch Desktop.app"
+fi
 run copy-application ditto "$INPUT_APP" "$APP"
 # Metadata is frozen before signing; this remains a development validation artifact.
 run package-metadata plutil -replace FsearchPackageStatus -string development-signing-validation "$APP/Contents/Info.plist"
 run remove-notary-claim plutil -remove FsearchNotarized "$APP/Contents/Info.plist"
+if [[ -n "$RELEASE_VERSION" ]]; then
+    run release-status plutil -replace FsearchPackageStatus -string release-candidate "$APP/Contents/Info.plist"
+    run release-mode plutil -replace FsearchDevelopmentBuild -bool false "$APP/Contents/Info.plist"
+    run release-identifier plutil -replace CFBundleIdentifier -string dev.fsearch.desktop "$APP/Contents/Info.plist"
+    run release-name plutil -replace CFBundleName -string 'Fsearch Desktop' "$APP/Contents/Info.plist"
+    run release-display-name plutil -replace CFBundleDisplayName -string 'Fsearch Desktop' "$APP/Contents/Info.plist"
+fi
+sign_code() {
+    local stage="$1" target="$2" runtime="$3"
+    set -- --force --sign "$FSEARCH_SIGNING_IDENTITY" --timestamp
+    if [[ "$runtime" == runtime ]]; then set -- "$@" --options runtime; fi
+    if [[ -n "${FSEARCH_SIGNING_KEYCHAIN:-}" ]]; then set -- "$@" --keychain "$FSEARCH_SIGNING_KEYCHAIN"; fi
+    run "$stage" codesign "$@" "$target"
+}
 # The final validation report carries authoritative Accepted/staple evidence.
 while IFS= read -r -d '' component; do
     if file "$component" | grep -q 'Mach-O'; then
         [[ "$(lipo -archs "$component" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')" == 'arm64 x86_64' ]] || fail 'Non-universal embedded executable.'
-        run sign-component codesign --force --sign "$FSEARCH_SIGNING_IDENTITY" --options runtime --timestamp "$component"
+        sign_code sign-component "$component" runtime
     fi
 done < <(find "$APP/Contents" -type f -print0)
 while IFS= read -r -d '' component; do
-    run sign-bundle codesign --force --sign "$FSEARCH_SIGNING_IDENTITY" --options runtime --timestamp "$component"
+    sign_code sign-bundle "$component" runtime
 done < <(find "$APP/Contents" -depth -type d \( -name '*.app' -o -name '*.framework' -o -name '*.xpc' -o -name '*.appex' -o -name '*.bundle' \) -print0)
-run sign-application codesign --force --sign "$FSEARCH_SIGNING_IDENTITY" --options runtime --timestamp "$APP"
+sign_code sign-application "$APP" runtime
 run verify-application codesign --verify --deep --strict "$APP"
 run signature-details codesign -dvvv "$APP"
 grep -q '^Authority=Developer ID Application:' "$TEMP/stderr" || fail 'Missing Developer ID authority.'
@@ -96,7 +120,9 @@ grep -q '^Timestamp=' "$TEMP/stderr" || fail 'Missing secure timestamp.'
 
 notarize() {
     local label="$1" artifact="$2" tool_result
-    if run "submit-$label" xcrun notarytool submit "$artifact" --keychain-profile "$FSEARCH_NOTARY_PROFILE" --wait --timeout 15m --output-format json; then
+    set -- notarytool submit "$artifact" --keychain-profile "$FSEARCH_NOTARY_PROFILE" --wait --timeout 15m --output-format json
+    if [[ -n "${FSEARCH_SIGNING_KEYCHAIN:-}" ]]; then set -- "$@" --keychain "$FSEARCH_SIGNING_KEYCHAIN"; fi
+    if run "submit-$label" xcrun "$@"; then
         tool_result=0
     else
         tool_result=1
@@ -126,10 +152,14 @@ run assess-application spctl --assess --type execute "$APP"
 mkdir -p "$TEMP/dmg-root"
 run copy-signed-application ditto "$APP" "$TEMP/dmg-root/$(basename "$APP")"
 ln -s /Applications "$TEMP/dmg-root/Applications"
-printf 'Signed development validation artifact. Not a stable release or alpha acceptance.\n' > "$TEMP/dmg-root/VALIDATION-README.txt"
+if [[ -n "$RELEASE_VERSION" ]]; then
+    printf 'Fsearch Desktop %s release candidate. Final acceptance is recorded alongside the DMG.\n' "$RELEASE_VERSION" > "$TEMP/dmg-root/VALIDATION-README.txt"
+else
+    printf 'Signed development validation artifact. Not a stable release or alpha acceptance.\n' > "$TEMP/dmg-root/VALIDATION-README.txt"
+fi
 DMG="$RUN/Fsearch-Desktop-signing-validation.dmg"
 run create-dmg hdiutil create -quiet -volname 'Fsearch Signing Validation' -srcfolder "$TEMP/dmg-root" -format UDZO "$DMG"
-run sign-dmg codesign --force --sign "$FSEARCH_SIGNING_IDENTITY" --timestamp "$DMG"
+sign_code sign-dmg "$DMG" dmg
 notarize dmg "$DMG"
 run staple-dmg xcrun stapler staple "$DMG"
 run validate-dmg-ticket xcrun stapler validate "$DMG"

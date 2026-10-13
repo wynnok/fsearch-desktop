@@ -28,9 +28,10 @@ dev_dmg_stop_smoke() {
     fi
 }
 
-dev_dmg_run_smoke() {
-    local executable="$1" sample="$2" output="$3" log="$4" result=0
-    arch "-$(uname -m)" "$executable" "$sample" --smoke "$output" > "$log" 2>&1 &
+dev_dmg_run_command() {
+    local log="$1" result=0
+    shift
+    "$@" > "$log" 2>&1 &
     DEV_DMG_SMOKE_PID=$!
     for _ in {1..90}; do
         kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null || break
@@ -44,6 +45,10 @@ dev_dmg_run_smoke() {
     wait "$DEV_DMG_SMOKE_PID" || result=$?
     DEV_DMG_SMOKE_PID=""
     return "$result"
+}
+
+dev_dmg_run_smoke() {
+    dev_dmg_run_command "$4" arch "-$(uname -m)" "$1" "$2" --smoke "$3"
 }
 
 dev_dmg_upstream_version() {

@@ -21,6 +21,107 @@ struct Change {
     recursive: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ContentRequest {
+    id: String,
+    pattern: String,
+    limit: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContentLine {
+    line: usize,
+    text: String,
+    ranges: Vec<(usize, usize)>,
+}
+
+#[derive(Serialize)]
+struct ContentFile {
+    path: String,
+    lines: Vec<ContentLine>,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ContentResponse {
+    #[serde(rename = "requestID")]
+    request_id: String,
+    files: Vec<ContentFile>,
+    candidates: usize,
+    read: usize,
+    complete: bool,
+    next: Option<usize>,
+    indexed: bool,
+    error: Option<&'static str>,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fsearch_engine_grep(
+    handle: *mut c_void,
+    json: *const c_char,
+) -> *mut c_char {
+    let mut response = ContentResponse::default();
+    let result = contained(|| -> Result<(), &'static str> {
+        if handle.is_null() {
+            return Err("Engine is not open");
+        }
+        let request: ContentRequest =
+            serde_json::from_str(unsafe { input(json) }.map_err(|_| "Invalid content input")?)
+                .map_err(|_| "Invalid content request")?;
+        response.request_id = request.id;
+        if request.pattern.trim().is_empty() || !(1..=1000).contains(&request.limit) {
+            return Err("Content pattern must not be empty and file limit must be 1...1000");
+        }
+        let h = unsafe { &*handle.cast::<EngineHandle>() };
+        let mut query = fsearch::query::Query::parse("", &h.root.to_string_lossy())
+            .map_err(|_| "Cannot prepare content query")?;
+        query.scope = Some(h.root.as_os_str().as_bytes().to_vec());
+        query.limit = request.limit;
+        let grep = fsearch::content::Grep::new(&request.pattern, fsearch::query::GrepMode::Literal)
+            .map_err(|_| "Invalid literal content pattern")?;
+        let (found, indexed) = h
+            .engine
+            .grep(&query, &grep)
+            .map_err(|_| "Engine content query failed")?;
+        response.candidates = found.candidates;
+        response.read = found.read;
+        response.complete = found.complete;
+        response.next = found.next;
+        response.indexed = indexed;
+        for file in found.files {
+            let path =
+                std::str::from_utf8(&file.path).map_err(|_| "Content filename is not UTF-8")?;
+            let lines = file
+                .lines
+                .into_iter()
+                .zip(file.hits)
+                .map(|((line, text), hit)| ContentLine {
+                    line,
+                    text,
+                    ranges: hit.ranges,
+                })
+                .collect();
+            response.files.push(ContentFile {
+                path: path.into(),
+                lines,
+            });
+        }
+        Ok(())
+    });
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => response.error = Some(error),
+        Err(_) => response.error = Some("Engine content query failed inside Rust"),
+    }
+    if response.error.is_some() {
+        response.complete = false;
+        response.files.clear();
+    }
+    serde_json::to_string(&response).map_or(std::ptr::null_mut(), owned_string)
+}
+
 // SKIP is process-wide upstream state; a process gets one confinement policy.
 static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const PERMISSION_WORKSPACE_MARKER: &str = ".fsearch-permission-workspace";

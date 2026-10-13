@@ -516,6 +516,21 @@ public actor FsearchService {
         try performSearch(request)
     }
 
+    public func grep(_ request: ContentSearchRequest) throws -> ContentSearchResponse {
+        guard handle.isEngine else { throw FsearchError.query("样本名称服务不提供正文搜索；需要真实 Engine 模式。") }
+        guard !request.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !request.pattern.utf8.contains(0), (1...1000).contains(request.limit) else {
+            throw FsearchError.query("请输入非空文本，文件数量限制须在 1...1000 内。")
+        }
+        let json = String(decoding: try JSONEncoder().encode(request), as: UTF8.self)
+        let response = try json.withCString {
+            try decodeOwned(fsearch_engine_grep(handle.pointer, $0), as: ContentSearchResponse.self)
+        }
+        guard response.requestID == request.id else { throw FsearchError.bridge("正文响应标识不一致") }
+        if let error = response.error { throw FsearchError.query(error) }
+        return response
+    }
+
     #if DEBUG
     @_spi(Testing) public func injectEngineQueryPanic() throws {
         guard handle.isEngine else { throw FsearchError.bridge("Panic injection requires Engine mode") }

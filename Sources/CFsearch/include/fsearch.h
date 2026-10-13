@@ -19,6 +19,7 @@ void fsearch_string_free(char *value);
 // Closing releases the caller's reference; upstream workers stop at process exit.
 void *fsearch_engine_open(const char *directory, const char *index, char **error);
 char *fsearch_engine_search(void *handle, const char *request_json);
+char *fsearch_engine_grep(void *handle, const char *request_json);
 // Debug builds only: explicit Engine fault injection.
 char *fsearch_engine_test_panic(void *handle, const char *request_json);
 char *fsearch_engine_status(void *handle);
