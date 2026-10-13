@@ -19,7 +19,7 @@ struct DiagnosticReport: Encodable {
     init(status: ServiceStatus?, error: Error? = nil, stderr: String? = nil) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
         clientVersion = Self.safeVersion(version)
-        engineVersion = Self.safeVersion(status?.upstreamVersion ?? "")
+        engineVersion = Self.safeEngineVersion(status?.upstreamVersion ?? "")
         #if arch(arm64)
         architecture = "arm64"
         #elseif arch(x86_64)
@@ -59,6 +59,15 @@ struct DiagnosticReport: Encodable {
     private static func safeVersion(_ value: String) -> String {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy({ $0.isASCII && $0.isNumber }) }) else { return "unknown" }
+        return value
+    }
+
+    private static func safeEngineVersion(_ value: String) -> String {
+        let parts = value.components(separatedBy: " / ")
+        if parts.count == 1 { return safeVersion(value) }
+        guard parts.count == 2, safeVersion(parts[0]) != "unknown",
+              parts[1].count == 40,
+              parts[1].allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return "unknown" }
         return value
     }
 }

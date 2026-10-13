@@ -135,8 +135,8 @@ final class SearchModel: ObservableObject {
         restoringPreferences = true
         preferencesStore?.restore(configuration: &configuration, selection: selectionState)
         restoringPreferences = false
-        preferenceObservation = selectionState.$isInspectorVisible.dropFirst().sink { [weak self] _ in
-            Task { @MainActor [weak self] in self?.persistPreferences() }
+        preferenceObservation = selectionState.$isInspectorVisible.dropFirst().sink { [weak self] visible in
+            self?.persistPreferences(inspectorVisible: visible)
         }
         let bundledSample = Bundle.main.resourceURL?.appendingPathComponent("sample", isDirectory: true)
         guard arguments.count >= 2 || bundledSample.map({ FileManager.default.fileExists(atPath: $0.path) }) == true else {
@@ -192,10 +192,10 @@ final class SearchModel: ObservableObject {
         }
     }
 
-    private func persistPreferences(onboardingDismissed: Bool? = nil) {
+    private func persistPreferences(onboardingDismissed: Bool? = nil, inspectorVisible: Bool? = nil) {
         do {
             try preferencesStore?.save(configuration: configuration,
-                                       inspectorVisible: selectionState.isInspectorVisible,
+                                       inspectorVisible: inspectorVisible ?? selectionState.isInspectorVisible,
                                        onboardingDismissed: onboardingDismissed)
         } catch {
             applicationMessage = "偏好保存失败；当前搜索仍可使用。"
@@ -880,6 +880,7 @@ final class SearchModel: ObservableObject {
             menuTitles.isSuperset(of: ["聚焦搜索", "查询", "刷新", "取消"]) == true,
             "Native search menu is incomplete"
         )
+        try require(menuTitles.contains("导出诊断报告…"), "Diagnostic export action is unavailable")
 
         requestSearchFocus()
         for _ in 0..<50 where window.firstResponder !== editor {
@@ -934,6 +935,28 @@ final class SearchModel: ObservableObject {
         await sortTask.value
         try require(selection == selectedID && snapshot?.sort == .descending,
                     "Sorting did not retain selection")
+
+        let retainedQuery = query
+        window.performClose(nil)
+        try require(!window.isVisible, "Close did not hide the search window")
+        try require(MainWindowLifecycle.shared.reopen(), "Search window did not reopen")
+        try require(query == retainedQuery && selection == selectedID && editor.string == retainedQuery,
+                    "Reopened search window lost current input or selection")
+        try await capture("settings-window-reopened", under: output)
+
+        let diagnosticURL = output.appendingPathComponent("diagnostics.json")
+        try DiagnosticReport(status: permissionStatus.status,
+                             error: FsearchError.query("/Users/隐私/秘密.txt\nprivate-body-marker"),
+                             stderr: "/Users/隐私/逗号,路径.txt\nprivate-body-marker").write(to: diagnosticURL)
+        let diagnosticData = try Data(contentsOf: diagnosticURL)
+        let diagnosticText = String(decoding: diagnosticData, as: UTF8.self)
+        let diagnostic = try JSONSerialization.jsonObject(with: diagnosticData) as? [String: Any]
+        try require(diagnostic?["errorCategory"] as? String == "query"
+                    && diagnostic?["engineVersion"] as? String == engineVersion,
+                    "Diagnostic export lost version or error category")
+        try require(!diagnosticText.contains("隐私") && !diagnosticText.contains("private-body-marker")
+                    && !diagnosticText.contains(retainedQuery), "Diagnostic export leaked private input")
+        print("Native settings window reopen and diagnostic file: passed")
 
         let previousAppearance = NSApplication.shared.appearance
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)

@@ -3,6 +3,19 @@ import XCTest
 
 @MainActor
 final class LocalPreferencesTests: XCTestCase {
+    func testImmediateRestartRetainsInspectorPreference() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let directory = root.appendingPathComponent(".build/preference-tests/\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LocalPreferences(url: directory.appendingPathComponent("preferences.json"))
+        let arguments = ["FsearchSample", root.appendingPathComponent("fixtures/sample").path]
+        let first = SearchModel(arguments: arguments, preferences: store)
+        first.toggleInspector()
+        let restarted = SearchModel(arguments: arguments, preferences: store)
+        XCTAssertFalse(restarted.isInspectorVisible)
+    }
+
     func testRestartRestoresPreferencesWithoutInputOrSelection() throws {
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(".build/preference-tests/\(UUID().uuidString)")
@@ -41,15 +54,20 @@ final class LocalPreferencesTests: XCTestCase {
         first.query = "private query"
         first.nameMode = .suffix
         first.configuration.showsHidden = false
+        first.sort = .sizeDescending
+        first.configuration.scope = .folder("/private/scope-marker")
+        first.configuration.filters.extensions = ["private-extension-marker"]
         first.selection = "/private/selected/file"
         first.permissionStatus.skipOnboarding()
         let restarted = SearchModel(arguments: arguments, preferences: store)
         XCTAssertEqual(restarted.nameMode, .suffix)
         XCTAssertFalse(restarted.configuration.showsHidden)
+        XCTAssertEqual(restarted.sort, .sizeDescending)
+        XCTAssertEqual(restarted.configuration.scope, .allIndexed)
+        XCTAssertFalse(restarted.configuration.filters.isEffective)
         XCTAssertFalse(restarted.permissionStatus.showOnboarding)
         XCTAssertEqual(restarted.query, "report")
         XCTAssertNil(restarted.selection)
-        XCTAssertTrue(try String(contentsOf: store.url, encoding: .utf8).contains("suffix"))
         XCTAssertFalse(try String(contentsOf: store.url, encoding: .utf8).contains("private"))
     }
 }
