@@ -98,6 +98,52 @@ fi
     exit 1
 }
 
+compare_versions() {
+    local left="${1#v}"
+    local right="${2#v}"
+    local left_major left_minor left_patch
+    local right_major right_minor right_patch
+    IFS=. read -r left_major left_minor left_patch <<< "$left"
+    IFS=. read -r right_major right_minor right_patch <<< "$right"
+
+    if ((left_major != right_major)); then
+        ((left_major < right_major)) && printf '%s\n' -1 || printf '%s\n' 1
+    elif ((left_minor != right_minor)); then
+        ((left_minor < right_minor)) && printf '%s\n' -1 || printf '%s\n' 1
+    elif ((left_patch != right_patch)); then
+        ((left_patch < right_patch)) && printf '%s\n' -1 || printf '%s\n' 1
+    else
+        printf '%s\n' 0
+    fi
+}
+
+build_result() {
+    local result_status="$1"
+    local candidate="$2"
+    local selection="$3"
+    local error="$4"
+    jq -n \
+        --arg status "$result_status" \
+        --arg current_version "$lock_version" \
+        --arg current_commit "$lock_commit" \
+        --argjson candidate "$candidate" \
+        --argjson selection "$selection" \
+        --argjson error "$error" \
+        --arg run_url "$RUN_URL" \
+        '{
+            status: $status,
+            update_available: ($status == "update_available"),
+            current: {
+                version: $current_version,
+                commit: $current_commit
+            },
+            candidate: $candidate,
+            selection: $selection,
+            error: $error,
+            run_url: (if $run_url == "" then null else $run_url end)
+        }'
+}
+
 emit_outputs() {
     if [[ -n "$OUTPUT_FILE" ]]; then
         printf '%s\n' "$result" > "$OUTPUT_FILE"
@@ -116,6 +162,12 @@ emit_outputs() {
                     printf 'Current: `v%s` (`%s`)\n\n' "$lock_version" "$lock_commit"
                     printf 'Candidate: `v%s` (`%s`)\n\n' "$candidate_version" "$candidate_commit"
                     printf 'Release: %s\n' "$candidate_release_url"
+                    ;;
+                current_ahead)
+                    printf '## Upstream release check: current ahead\n\n'
+                    printf 'Current pin `v%s` (`%s`) is newer than the latest formal release `v%s` (`%s`).\n\n' \
+                        "$lock_version" "$lock_commit" "$candidate_version" "$candidate_commit"
+                    printf 'No downgrade is suggested.\n'
                     ;;
                 error)
                     printf '## Upstream release check: error\n\n'
@@ -140,31 +192,15 @@ emit_error() {
     selection_json="null"
     error_json="$(jq -n --arg kind "$error_kind" --arg message "$error_message" \
         '{kind: $kind, message: $message}')"
-    result="$(jq -n \
-        --arg status "$status" \
-        --arg current_version "$lock_version" \
-        --arg current_commit "$lock_commit" \
-        --argjson candidate "$candidate_json" \
-        --argjson selection "$selection_json" \
-        --argjson error "$error_json" \
-        --arg run_url "$RUN_URL" \
-        '{
-            status: $status,
-            current: {
-                version: $current_version,
-                commit: $current_commit
-            },
-            candidate: $candidate,
-            selection: $selection,
-            error: $error,
-            run_url: (if $run_url == "" then null else $run_url end)
-        }')"
+    result="$(build_result "$status" "$candidate_json" "$selection_json" "$error_json")"
     emit_outputs
     printf 'Upstream release check failed (%s): %s\n' "$error_kind" "$error_message" >&2
     exit 1
 }
 
-WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/fsearch-upstream-release-check.XXXXXX")"
+BUILD_ROOT="$PROJECT_ROOT/.build/upstream-release-check"
+mkdir -p "$BUILD_ROOT"
+WORKSPACE="$(mktemp -d "$BUILD_ROOT/run.XXXXXX")"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
 fetch_json() {
@@ -278,7 +314,10 @@ candidate_commit="$(jq -er --arg tag "$candidate_tag" '
 ' "$TAGS_FILE")" \
     || emit_error api "Selected release tag $candidate_tag was not resolved to a commit"
 
-if [[ "$candidate_version" == "$lock_version" && "$candidate_commit" == "$lock_commit" ]]; then
+version_relation="$(compare_versions "$candidate_version" "$lock_version")"
+if [[ "$version_relation" -lt 0 ]]; then
+    status="current_ahead"
+elif [[ "$candidate_version" == "$lock_version" && "$candidate_commit" == "$lock_commit" ]]; then
     status="current"
 else
     status="update_available"
@@ -310,24 +349,6 @@ candidate_json="$(jq -n \
     }')"
 error_json="null"
 
-result="$(jq -n \
-    --arg status "$status" \
-    --arg current_version "$lock_version" \
-    --arg current_commit "$lock_commit" \
-    --argjson candidate "$candidate_json" \
-    --argjson selection "$selection_json" \
-    --argjson error "$error_json" \
-    --arg run_url "$RUN_URL" \
-    '{
-        status: $status,
-        current: {
-            version: $current_version,
-            commit: $current_commit
-        },
-        candidate: $candidate,
-        selection: $selection,
-        error: $error,
-        run_url: (if $run_url == "" then null else $run_url end)
-    }')"
+result="$(build_result "$status" "$candidate_json" "$selection_json" "$error_json")"
 
 emit_outputs

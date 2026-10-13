@@ -4,7 +4,9 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$PROJECT_ROOT/scripts/check-upstream-release.sh"
 FIXTURES="$PROJECT_ROOT/scripts/tests/fixtures"
-WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/fsearch-upstream-check-tests.XXXXXX")"
+BUILD_ROOT="$PROJECT_ROOT/.build/upstream-release-check-tests"
+mkdir -p "$BUILD_ROOT"
+WORKSPACE="$(mktemp -d "$BUILD_ROOT/run.XXXXXX")"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
 fail() {
@@ -24,6 +26,7 @@ test_no_update() {
 
     jq -e '
         .status == "current" and
+        .update_available == false and
         .current.version == "0.2.1" and
         .current.commit == "88e63fdf850cf7749deae8198b187accd21f8ba5" and
         .candidate.version == "0.2.1" and
@@ -40,6 +43,7 @@ test_new_candidate() {
 
     jq -e '
         .status == "update_available" and
+        .update_available == true and
         .current.version == "0.2.1" and
         .candidate.version == "0.3.0" and
         .candidate.tag == "v0.3.0" and
@@ -60,6 +64,21 @@ test_filters_non_formal_releases() {
         .candidate.tag == "v0.3.0" and
         .candidate.commit == "1111111111111111111111111111111111111111"
     ' "$output" > /dev/null || fail "draft, prerelease, or rolling main was selected"
+}
+
+test_current_ahead_does_not_suggest_downgrade() {
+    local output="$WORKSPACE/current-ahead.json"
+    bash "$CHECK" \
+        --releases-file "$FIXTURES/releases-current-ahead.json" \
+        --tags-file "$FIXTURES/tags-current-ahead.json" > "$output"
+
+    jq -e '
+        .status == "current_ahead" and
+        .update_available == false and
+        .current.version == "0.2.1" and
+        .candidate.version == "0.2.0" and
+        .candidate.commit == "e96ebeb52545ea4facd4a4b3af393c42c980fb5d"
+    ' "$output" > /dev/null || fail "current pin ahead of the latest formal release suggested a downgrade"
 }
 
 test_repeated_run_is_stable() {
@@ -89,6 +108,7 @@ run_expected_error() {
     [[ "$status" -eq 1 ]] || fail "$kind failure returned status $status instead of 1"
     jq -e --arg kind "$kind" '
         .status == "error" and
+        .update_available == false and
         .current.version == "0.2.1" and
         .current.commit == "88e63fdf850cf7749deae8198b187accd21f8ba5" and
         .candidate == null and
@@ -136,6 +156,7 @@ test_traceable_outputs() {
 test_no_update
 test_new_candidate
 test_filters_non_formal_releases
+test_current_ahead_does_not_suggest_downgrade
 test_repeated_run_is_stable
 test_network_failure
 test_api_failure
