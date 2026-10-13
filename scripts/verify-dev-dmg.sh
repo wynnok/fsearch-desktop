@@ -78,12 +78,15 @@ GENERATED_NOTICES="$TEMP_DIR/THIRD-PARTY-NOTICES.txt"
 MOUNTED=0
 
 cleanup() {
+    dev_dmg_stop_smoke
     if [[ "$MOUNTED" == 1 ]]; then
         hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
     fi
     rm -rf "$TEMP_DIR"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 UPSTREAM_VERSION="$(sed -n 's/^const UPSTREAM_VERSION: &str = "\(.*\)";$/\1/p' "$PROJECT_ROOT/bridge/src/lib.rs")"
 [[ -n "$UPSTREAM_VERSION" ]] || { echo "Cannot read the embedded Fsearch version" >&2; exit 1; }
@@ -208,18 +211,24 @@ else
 fi
 
 mkdir -p "$SMOKE_OUTPUT"
-if ! arch "-$HOST_ARCHITECTURE" "$INSTALLED_APP/Contents/MacOS/FsearchSample" \
-    "$INSTALLED_SAMPLE" --smoke "$SMOKE_OUTPUT" > "$SMOKE_LOG" 2>&1; then
+if ! dev_dmg_run_smoke "$INSTALLED_APP/Contents/MacOS/FsearchSample" "$INSTALLED_SAMPLE" "$SMOKE_OUTPUT" "$SMOKE_LOG"; then
     cat "$SMOKE_LOG" >&2
     echo "Installed application smoke failed" >&2
     exit 1
 fi
 cat "$SMOKE_LOG"
-for file in page-final.png responsive-latest.png responsiveness.txt; do
+for file in page-final.png responsive-latest.png responsiveness.txt search-journey.json file-journey.json file-actions.json diagnostics.json settings-window-reopened.png manual-update-entry.png file-journey.png; do
     [[ -f "$SMOKE_OUTPUT/$file" ]] || { echo "Installed smoke did not produce $file" >&2; exit 1; }
 done
 grep -q 'Native smoke page-final: passed' "$SMOKE_LOG"
 grep -q 'NATIVE_RESPONSIVENESS' "$SMOKE_LOG"
+grep -q 'Native search and file acceptance journeys: passed' "$SMOKE_LOG"
+ruby -rjson - "$SMOKE_OUTPUT" <<'RUBY'
+%w[search-journey.json file-journey.json file-actions.json].each do |name|
+  checks = JSON.parse(File.read(File.join(ARGV[0], name)))
+  raise "Acceptance checks missing or failed: #{name}" if checks.empty? || checks.values.any? { |value| value != true }
+end
+RUBY
 
 {
     printf 'Development DMG verification: PASSED\n'
@@ -249,4 +258,8 @@ grep -q 'NATIVE_RESPONSIVENESS' "$SMOKE_LOG"
 } > "$REPORT"
 
 cp "$SMOKE_LOG" "$DEV_DMG_VERIFICATION_DIR/smoke.log"
+mkdir -p "$DEV_DMG_VERIFICATION_DIR/journeys"
+for evidence in search-journey.json file-journey.json file-actions.json diagnostics.json settings-window-reopened.png manual-update-entry.png file-journey.png; do
+    cp "$SMOKE_OUTPUT/$evidence" "$DEV_DMG_VERIFICATION_DIR/journeys/$evidence"
+done
 cat "$REPORT"

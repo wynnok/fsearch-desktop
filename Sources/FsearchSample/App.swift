@@ -273,7 +273,7 @@ final class SearchModel: ObservableObject {
     func submit() { Task { await search() } }
     func refresh() { Task { await search(refresh: !isEngineMode) } }
 
-    private func search(
+    func search(
         refresh: Bool = false,
         maximumResults: Int? = nil,
         activity requestedActivity: SearchActivity = .querying
@@ -482,6 +482,32 @@ final class SearchModel: ObservableObject {
                 try await capture(requestedSort.rawValue, under: output)
             }
             try await runResponsivenessSmoke(under: output)
+            guard let smokeDirectory else { throw FsearchError.bridge("Acceptance fixture unavailable") }
+            let searchChecks = try await NativeAcceptanceSmoke.search(model: self, directory: smokeDirectory)
+            try require(searchChecks.values.allSatisfy { $0 }, "Search acceptance failed: \(searchChecks)")
+            try JSONEncoder().encode(searchChecks).write(to: output.appendingPathComponent("search-journey.json"))
+            try await capture("search-journey", under: output)
+            guard let acceptanceWindow = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
+                throw FsearchError.bridge("Acceptance window unavailable")
+            }
+            let fileChecks = try await NativeAcceptanceSmoke.files(model: self, window: acceptanceWindow, directory: smokeDirectory)
+            try require(fileChecks.values.allSatisfy { $0 }, "File acceptance failed: \(fileChecks)")
+            try JSONEncoder().encode(fileChecks).write(to: output.appendingPathComponent("file-journey.json"))
+            try await capture("file-journey", under: output)
+            showsUpdates = true
+            for _ in 0..<100 where acceptanceWindow.attachedSheet == nil {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            guard let updateSheet = acceptanceWindow.attachedSheet else {
+                throw FsearchError.bridge("Manual update sheet did not open")
+            }
+            try await capture("manual-update-entry", under: output, window: updateSheet)
+            showsUpdates = false
+            for _ in 0..<100 where acceptanceWindow.attachedSheet != nil {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try require(acceptanceWindow.attachedSheet == nil, "Manual update sheet did not dismiss")
+            print("Native search and file acceptance journeys: passed")
 
             #if DEBUG
             guard let service else { throw FsearchError.bridge("Smoke service is unavailable") }
@@ -980,9 +1006,9 @@ final class SearchModel: ObservableObject {
         if !condition { throw FsearchError.bridge(message) }
     }
 
-    private func capture(_ name: String, under output: URL) async throws {
+    private func capture(_ name: String, under output: URL, window: NSWindow? = nil) async throws {
         try await Task.sleep(for: .milliseconds(300))
-        guard let view = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView,
+        guard let view = (window ?? NSApplication.shared.windows.first(where: { $0.isVisible }))?.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             throw FsearchError.bridge("Native window is unavailable")
         }

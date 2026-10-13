@@ -11,6 +11,40 @@ DEV_DMG_ROOT="$PROJECT_ROOT/.build/dev-dmg"
 DEV_DMG_OUTPUT_DIR="$DEV_DMG_ROOT/output"
 DEV_DMG_VERIFICATION_DIR="$DEV_DMG_ROOT/verification"
 DEV_DMG_ARTIFACT_PREFIX="Fsearch-Desktop"
+DEV_DMG_SMOKE_PID=""
+
+dev_dmg_stop_smoke() {
+    if [[ -n "$DEV_DMG_SMOKE_PID" ]]; then
+        kill -TERM "$DEV_DMG_SMOKE_PID" >/dev/null 2>&1 || true
+        for _ in {1..3}; do
+            kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null || break
+            sleep 1
+        done
+        if kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null; then
+            kill -KILL "$DEV_DMG_SMOKE_PID" >/dev/null 2>&1 || true
+        fi
+        wait "$DEV_DMG_SMOKE_PID" >/dev/null 2>&1 || true
+        DEV_DMG_SMOKE_PID=""
+    fi
+}
+
+dev_dmg_run_smoke() {
+    local executable="$1" sample="$2" output="$3" log="$4" result=0
+    arch "-$(uname -m)" "$executable" "$sample" --smoke "$output" > "$log" 2>&1 &
+    DEV_DMG_SMOKE_PID=$!
+    for _ in {1..90}; do
+        kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null || break
+        sleep 2
+    done
+    if kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null; then
+        echo 'Installed application smoke timed out.' >&2
+        dev_dmg_stop_smoke
+        return 1
+    fi
+    wait "$DEV_DMG_SMOKE_PID" || result=$?
+    DEV_DMG_SMOKE_PID=""
+    return "$result"
+}
 
 dev_dmg_upstream_version() {
     sed -n 's/^const UPSTREAM_VERSION: &str = "\(.*\)";$/\1/p' "$PROJECT_ROOT/bridge/src/lib.rs"
