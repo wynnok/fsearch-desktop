@@ -77,7 +77,9 @@ jobs:
             .build/dev-dmg/output/SHA256SUMS
             .build/dev-dmg/output/build-manifest.txt
             .build/dev-dmg/output/THIRD-PARTY-NOTICES.txt
-            .build/dev-dmg/output/verification-report.txt
+            .build/dev-dmg/verification/verification-report.txt
+            .build/dev-dmg/verification/smoke.log
+            .build/dev-dmg/verification/journeys/
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

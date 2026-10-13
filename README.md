@@ -11,6 +11,8 @@
 | 文档 | 用途 |
 | --- | --- |
 | [开发验证版使用指南](docs/product/user-guide.md) | 实际模式、搜索/权限、文件动作、本地数据、诊断及手动更新 |
+| [支持状态与已知限制](docs/product/support-status.md) | 两芯片/最低系统证据、默认样本模式与未解除门禁 |
+| [T27 alpha 交付判定](docs/implementation/T27.md) | 干净提交对应 DMG、安装证据、资源报告及 Wave 5 前置条件 |
 | [Wave 4 旅程验收](docs/implementation/Wave4.md) | T25/T26/T28 的证据、失败与未验证项 |
 | [Tickets 索引](docs/tickets/README.md) | 33 张已批准的纵向执行切片、主 Spec 归属、原生阻塞边及认领顺序 |
 | [Spec 索引](docs/specs/README.md) | 14 份已发布规格、原生父子/阻塞关系、执行顺序与 23 项选择追踪 |
