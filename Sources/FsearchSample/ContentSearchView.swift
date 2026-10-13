@@ -26,7 +26,6 @@ final class ContentSearchState: ObservableObject {
     var busy: Bool { controller.busy }
     var message: String { controller.message }
     var canLoadMore: Bool { controller.canLoadMore }
-    var displayedOccurrences: Int { controller.displayedOccurrences }
 
     init(service: FsearchService?) {
         controller = ContentSearchController { request in

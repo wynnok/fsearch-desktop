@@ -49,6 +49,7 @@ enum ContentCheck {
 
         let selected = try await service.grep(ContentSearchRequest(
             pattern: "filter-target",
+            limit: 1,
             scopePath: fixture.appendingPathComponent("selected").path,
             showsHidden: false,
             filters: NameSearchFilters(kind: .file, extensions: ["txt"], minimumSize: 1)

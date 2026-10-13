@@ -108,8 +108,12 @@ public struct ContentSearchResponse: Decodable, Sendable {
     public let next: Int?
     public let indexed: Bool
     public let error: String?
-    public var displayedOccurrences: Int { files.reduce(0) { $0 + $1.lines.reduce(0) { $0 + $1.ranges.count } } }
+    public var displayedOccurrences: Int { Self.occurrenceCount(in: files) }
     public var hasMore: Bool { !complete || next != nil }
+
+    static func occurrenceCount(in files: [ContentFile]) -> Int {
+        files.reduce(0) { $0 + $1.lines.reduce(0) { $0 + $1.ranges.count } }
+    }
 
     public init(
         requestID: String,

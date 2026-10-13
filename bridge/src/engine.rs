@@ -102,7 +102,8 @@ pub unsafe extern "C" fn fsearch_engine_grep(
             return Err("Content request has an invalid identifier, pattern or file limit");
         }
         let h = unsafe { &*handle.cast::<EngineHandle>() };
-        let mut query = fsearch::query::Query::parse("", &h.root.to_string_lossy())
+        let query_text = if request.shows_hidden { "" } else { "!.*" };
+        let mut query = fsearch::query::Query::parse(query_text, &h.root.to_string_lossy())
             .map_err(|_| "Cannot prepare content query")?;
         super::apply_filters(&mut query, &request.filters)
             .map_err(|_| "Invalid content filter range")?;
@@ -150,15 +151,6 @@ pub unsafe extern "C" fn fsearch_engine_grep(
         response.next = found.next;
         response.indexed = indexed;
         for file in found.files {
-            if !request.shows_hidden
-                && super::hidden_path(
-                    file.path
-                        .strip_prefix(h.root.as_os_str().as_bytes())
-                        .unwrap_or(&file.path),
-                )
-            {
-                continue;
-            }
             let path =
                 std::str::from_utf8(&file.path).map_err(|_| "Content filename is not UTF-8")?;
             let lines = file
