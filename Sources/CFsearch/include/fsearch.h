@@ -26,4 +26,11 @@ char *fsearch_engine_changes(void *handle);
 void fsearch_engine_save(void *handle);
 void fsearch_engine_close(void *handle);
 
+// Permission validation only. This starts the default, non-confined Engine and
+// therefore requires FSEARCH_PERMISSION_ENV=dedicated plus an index inside an
+// existing dedicated workspace marked with .fsearch-permission-workspace.
+// It keeps upstream's default FDA probe and name/content indexing, does not
+// install Seatbelt, and still allows one Engine per process.
+void *fsearch_real_engine_open(const char *index, char **error);
+
 #endif

@@ -10,7 +10,8 @@ let package = Package(
     products: [
         .library(name: "FsearchService", targets: ["FsearchService"]),
         .executable(name: "FsearchSample", targets: ["FsearchSample"]),
-        .executable(name: "FsearchEngineCheck", targets: ["FsearchEngineCheck"])
+        .executable(name: "FsearchEngineCheck", targets: ["FsearchEngineCheck"]),
+        .executable(name: "FsearchResourceCheck", targets: ["FsearchResourceCheck"])
     ],
     targets: [
         .systemLibrary(name: "CFsearch"),
@@ -26,6 +27,7 @@ let package = Package(
         ),
         .executableTarget(name: "FsearchSample", dependencies: ["FsearchService"]),
         .executableTarget(name: "FsearchEngineCheck", dependencies: ["FsearchService"]),
+        .executableTarget(name: "FsearchResourceCheck", dependencies: ["FsearchService"]),
         .testTarget(name: "FsearchServiceTests", dependencies: ["FsearchService"])
     ]
 )

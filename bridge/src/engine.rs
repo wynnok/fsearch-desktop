@@ -23,6 +23,54 @@ struct Change {
 
 // SKIP is process-wide upstream state; a process gets one confinement policy.
 static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const PERMISSION_WORKSPACE_MARKER: &str = ".fsearch-permission-workspace";
+
+fn permission_index(index: &str) -> Result<(PathBuf, String), String> {
+    if std::env::var("FSEARCH_PERMISSION_ENV").ok().as_deref() != Some("dedicated") {
+        return Err(
+            "Default Engine requires FSEARCH_PERMISSION_ENV=dedicated in a dedicated workspace"
+                .into(),
+        );
+    }
+    let requested = PathBuf::from(index);
+    if !requested.is_absolute() {
+        return Err("Permission Engine index must be an absolute directory".into());
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path != Path::new("/"))
+        .ok_or("Permission Engine requires an absolute real HOME")?;
+    let workspace = std::env::var_os("FSEARCH_PERMISSION_WORKSPACE")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or("Permission Engine requires an absolute FSEARCH_PERMISSION_WORKSPACE")?
+        .canonicalize()
+        .map_err(|_| "Permission workspace must exist")?;
+    if workspace == Path::new("/") || workspace == home {
+        return Err("Permission workspace must be a dedicated directory".into());
+    }
+    if !workspace.join(PERMISSION_WORKSPACE_MARKER).is_file() {
+        return Err(format!(
+            "Permission workspace must contain {PERMISSION_WORKSPACE_MARKER}"
+        ));
+    }
+    if !requested.starts_with(&workspace) {
+        return Err("Permission Engine index must be inside its dedicated workspace".into());
+    }
+    std::fs::create_dir_all(&requested)
+        .map_err(|_| "Cannot create independent permission Engine index")?;
+    let requested = requested
+        .canonicalize()
+        .map_err(|_| "Cannot resolve permission Engine index")?;
+    if requested == Path::new("/")
+        || requested == workspace
+        || requested == home
+        || !requested.starts_with(&workspace)
+    {
+        return Err("Permission Engine index must not be HOME or the filesystem root".into());
+    }
+    Ok((requested, home.to_string_lossy().into()))
+}
 
 fn confine(root: &Path, data: &Path) -> Result<Vec<PathBuf>, String> {
     let mut skip = Vec::new();
@@ -154,6 +202,46 @@ pub unsafe extern "C" fn fsearch_engine_open(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fsearch_real_engine_open(
+    index: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut c_void {
+    if error.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe { *error = std::ptr::null_mut() };
+    let result = contained(|| -> Result<EngineHandle, String> {
+        let (data, home) = permission_index(unsafe { input(index)? })?;
+        if STARTED.swap(true, Ordering::SeqCst) {
+            return Err("Permission Engine requires one Engine per process".into());
+        }
+        // This entry intentionally keeps upstream's default FDA probe and name/content
+        // indexing. It never installs Seatbelt; isolation comes from the dedicated host.
+        let engine = Engine::start(Options {
+            dir: data,
+            home,
+            skip: None,
+        })?;
+        Ok(EngineHandle {
+            engine,
+            root: PathBuf::from("/"),
+            changes: Arc::new(Mutex::new(Vec::new())),
+        })
+    });
+    match result {
+        Ok(Ok(handle)) => Box::into_raw(Box::new(handle)).cast(),
+        failure => {
+            let message = match failure {
+                Ok(Err(message)) => message,
+                _ => "Permission Engine initialization failed".into(),
+            };
+            unsafe { *error = owned_string(message) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EngineStatus {
@@ -163,7 +251,13 @@ struct EngineStatus {
     upstream_version: &'static str,
     owner: bool,
     entries: usize,
+    dirs: usize,
+    index_bytes: usize,
+    content_docs: usize,
+    content_segments: usize,
+    content_bytes: usize,
     content_pending: usize,
+    full_disk_access: bool,
 }
 
 fn status(handle: &EngineHandle) -> EngineStatus {
@@ -175,7 +269,13 @@ fn status(handle: &EngineHandle) -> EngineStatus {
         upstream_version: UPSTREAM_VERSION,
         owner: s.owner,
         entries: s.entries,
+        dirs: s.dirs,
+        index_bytes: s.index_bytes,
+        content_docs: s.content_docs,
+        content_segments: s.content_segments,
+        content_bytes: s.content_bytes,
         content_pending: s.content_pending,
+        full_disk_access: s.full_disk_access,
     }
 }
 

@@ -40,6 +40,9 @@ final class SearchModel: ObservableObject {
     private(set) var isEngineMode = false
     private var engineWorkspace: URL?
     private var engineSmokeStarted = false
+    private(set) var isPermissionProbeMode = false
+    private var permissionProbeArguments: PermissionProbeArguments?
+    private var permissionProbeStarted = false
     private let pageSize = 2
 
     init() {
@@ -50,6 +53,16 @@ final class SearchModel: ObservableObject {
             return
         }
         do {
+            if arguments.count == 5, arguments[1] == "--permission-probe" {
+                permissionProbeArguments = PermissionProbeArguments(
+                    phase: arguments[2],
+                    config: URL(fileURLWithPath: arguments[3]),
+                    output: URL(fileURLWithPath: arguments[4])
+                )
+                isPermissionProbeMode = true
+                localMessage = "权限验证专用模式：等待真实 Engine 与受保护位置证据。"
+                return
+            }
             if arguments.count == 3, arguments[1] == "--engine-smoke" {
                 let workspace = URL(fileURLWithPath: arguments[2]).resolvingSymlinksInPath()
                 engineWorkspace = workspace
@@ -119,6 +132,12 @@ final class SearchModel: ObservableObject {
 
     // Opt-in smoke uses the same actions and real window, with project-local files.
     func runSmokeIfRequested() async {
+        if isPermissionProbeMode {
+            guard !permissionProbeStarted else { return }
+            permissionProbeStarted = true
+            Task { await runPermissionProbe() }
+            return
+        }
         if isEngineMode {
             guard !engineSmokeStarted else { return }
             engineSmokeStarted = true
@@ -231,6 +250,231 @@ final class SearchModel: ObservableObject {
             fputs("Native smoke failed: \(error.localizedDescription)\n", stderr)
             exit(1)
         }
+    }
+
+    private func runPermissionProbe() async {
+        guard let request = permissionProbeArguments else {
+            fputs("Permission probe arguments are unavailable\n", stderr)
+            exit(1)
+        }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        do {
+            guard let phase = PermissionValidationPhase(rawValue: request.phase) else {
+                throw FsearchError.bridge("Usage: --permission-probe <skip|grant|recheck|restart|revoke> <config.json> <output.json>")
+            }
+            let config = try loadPermissionProbeConfig(request.config)
+            let indexDirectory = try validatePermissionProbeConfig(config)
+            let iCloudPath = config.iCloudPlaceholder.map {
+                URL(fileURLWithPath: $0, isDirectory: false)
+            }
+            let iCloudBefore = iCloudStat(iCloudPath)
+
+            // The Rust gate rejects this before creating the index unless the
+            // process is marked as a dedicated permission-validation run.
+            let service = try FsearchService(realEngineIndexDirectory: indexDirectory)
+            let readyStatus = try await waitForPermissionEngine(service)
+            let settle = try await waitForPermissionContentSettle(service, readyStatus: readyStatus)
+            let iCloudAfter = iCloudStat(iCloudPath)
+            let iCloud = iCloudEvidence(path: iCloudPath, before: iCloudBefore, after: iCloudAfter)
+
+            var locations: [PermissionProtectedLocationEvidence] = []
+            for configured in config.protectedLocations {
+                let directory = URL(fileURLWithPath: configured.path, isDirectory: true)
+                    .standardizedFileURL
+                let sentinel = directory.appendingPathComponent(configured.sentinelName)
+                let exists = FileManager.default.fileExists(atPath: sentinel.path)
+                let directReadable = exists && canRead(sentinel)
+                let response = try await service.search(
+                    SearchRequest(query: configured.sentinelName, collectAll: true)
+                )
+                let sentinelPath = sentinel.standardizedFileURL.path
+                let searchMatched = response.results.contains {
+                    URL(fileURLWithPath: $0.path).standardizedFileURL.path == sentinelPath
+                }
+                locations.append(PermissionProtectedLocationEvidence(
+                    name: configured.name,
+                    path: configured.path,
+                    exists: exists,
+                    directReadable: directReadable,
+                    searchMatched: searchMatched,
+                    searchComplete: response.isComplete
+                ))
+            }
+            let evidence = PermissionProbeEvidence(
+                phase: phase,
+                timestamp: timestamp,
+                status: settle.status,
+                locations: locations,
+                iCloud: iCloud,
+                contentSettled: settle.settled,
+                contentSettleReason: settle.reason
+            )
+            try writePermissionEvidence(evidence, to: request.output)
+            print("Permission probe \(phase.rawValue) completed: \(request.output.path)")
+            NSApplication.shared.terminate(nil)
+        } catch {
+            let failure = PermissionProbeFailure(
+                phase: request.phase,
+                timestamp: timestamp,
+                error: error.localizedDescription,
+                assessment: PermissionPhaseAssessment(
+                    passed: false,
+                    reasons: [error.localizedDescription]
+                )
+            )
+            try? writePermissionEvidence(failure, to: request.output)
+            fputs("Permission probe failed: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+
+    private func loadPermissionProbeConfig(_ url: URL) throws -> PermissionProbeConfig {
+        guard url.path.hasPrefix("/"), FileManager.default.fileExists(atPath: url.path) else {
+            throw FsearchError.bridge("Permission probe config must be an existing absolute file")
+        }
+        return try JSONDecoder().decode(PermissionProbeConfig.self, from: Data(contentsOf: url))
+    }
+
+    private func validatePermissionProbeConfig(_ config: PermissionProbeConfig) throws -> URL {
+        guard config.indexDirectory.hasPrefix("/") else {
+            throw FsearchError.bridge("Permission probe indexDirectory must be absolute")
+        }
+        guard !config.protectedLocations.isEmpty else {
+            throw FsearchError.bridge("Permission probe requires at least one protected location")
+        }
+        for location in config.protectedLocations {
+            let sentinel = URL(fileURLWithPath: location.sentinelName)
+            guard location.path.hasPrefix("/"), !location.name.isEmpty,
+                  !location.sentinelName.isEmpty, location.sentinelName != ".",
+                  location.sentinelName != "..", sentinel.lastPathComponent == location.sentinelName else {
+                throw FsearchError.bridge("Each protected location needs an absolute path and simple sentinelName")
+            }
+        }
+        return URL(fileURLWithPath: config.indexDirectory, isDirectory: true)
+    }
+
+    private func waitForPermissionEngine(_ service: FsearchService) async throws -> ServiceStatus {
+        let configured = TimeInterval(ProcessInfo.processInfo.environment["FSEARCH_PERMISSION_READY_TIMEOUT_SECONDS"] ?? "")
+        let timeout = max(1, configured ?? 1800)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let status = try await service.status()
+            if status.ready { return status }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        throw FsearchError.bridge("Permission Engine did not become ready before timeout")
+    }
+
+    private func waitForPermissionContentSettle(
+        _ service: FsearchService,
+        readyStatus: ServiceStatus
+    ) async throws -> PermissionContentSettleResult {
+        let configured = TimeInterval(
+            ProcessInfo.processInfo.environment["FSEARCH_PERMISSION_CONTENT_SETTLE_SECONDS"] ?? ""
+        )
+        let timeout = max(0, configured ?? 300)
+        let deadline = Date().addingTimeInterval(timeout)
+        var latest = readyStatus
+        while true {
+            if let contentDocs = latest.contentDocs, contentDocs > 0,
+               latest.contentPending == 0 {
+                return PermissionContentSettleResult(status: latest, settled: true, reason: nil)
+            }
+            let docs = latest.contentDocs.map(String.init) ?? "unknown"
+            let pending = latest.contentPending.map(String.init) ?? "unknown"
+            if Date() >= deadline {
+                return PermissionContentSettleResult(
+                    status: latest,
+                    settled: false,
+                    reason: "content index did not establish activity and settle before timeout; contentDocs=\(docs), contentPending=\(pending)"
+                )
+            }
+            try await Task.sleep(for: .milliseconds(500))
+            latest = try await service.status()
+        }
+    }
+
+    private func canRead(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        do {
+            _ = try handle.read(upToCount: 1)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func iCloudStat(_ url: URL?) -> PermissionICloudStat? {
+        guard let url else { return nil }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return PermissionICloudStat(
+                exists: false, size: nil, isUbiquitous: nil,
+                downloadingStatus: nil, error: "placeholder path does not exist"
+            )
+        }
+        do {
+            let values = try url.resourceValues(forKeys: [
+                .fileSizeKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey
+            ])
+            return PermissionICloudStat(
+                exists: true,
+                size: values.fileSize.map(Int64.init),
+                isUbiquitous: values.isUbiquitousItem,
+                downloadingStatus: values.ubiquitousItemDownloadingStatus?.rawValue,
+                error: nil
+            )
+        } catch {
+            return PermissionICloudStat(
+                exists: true, size: nil, isUbiquitous: nil,
+                downloadingStatus: nil, error: error.localizedDescription
+            )
+        }
+    }
+
+    private func iCloudEvidence(
+        path: URL?,
+        before: PermissionICloudStat?,
+        after: PermissionICloudStat?
+    ) -> PermissionICloudEvidence {
+        guard let path else {
+            return PermissionICloudEvidence(
+                configured: false, path: nil, materialization: .unverified,
+                before: nil, after: nil, reason: "iCloud placeholder was not configured"
+            )
+        }
+        guard let before, let after, before.exists, after.exists,
+              before.isUbiquitous == true, after.isUbiquitous == true else {
+            return PermissionICloudEvidence(
+                configured: true, path: path.path, materialization: .unverified,
+                before: before, after: after, reason: "configured path is not a verifiable iCloud placeholder"
+            )
+        }
+        if after.downloadingStatus == "downloaded" || after.downloadingStatus == "current" {
+            return PermissionICloudEvidence(
+                configured: true, path: path.path, materialization: .materialized,
+                before: before, after: after, reason: "placeholder became materialized"
+            )
+        }
+        if before.downloadingStatus == "notDownloaded", after.downloadingStatus == "notDownloaded" {
+            return PermissionICloudEvidence(
+                configured: true, path: path.path, materialization: .notMaterialized,
+                before: before, after: after, reason: nil
+            )
+        }
+        return PermissionICloudEvidence(
+            configured: true, path: path.path, materialization: .unverified,
+            before: before, after: after, reason: "ubiquitous downloading status was inconclusive"
+        )
+    }
+
+    private func writePermissionEvidence<T: Encodable>(_ evidence: T, to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(evidence).write(to: url, options: .atomic)
     }
 
     private func runEngineSmoke() async {
@@ -366,6 +610,37 @@ final class SearchModel: ObservableObject {
         try png.write(to: output.appendingPathComponent("\(name).png"))
         print("Native smoke \(name): passed")
     }
+}
+
+private struct PermissionProbeArguments {
+    let phase: String
+    let config: URL
+    let output: URL
+}
+
+private struct PermissionProbeConfig: Decodable {
+    let indexDirectory: String
+    let protectedLocations: [PermissionProbeLocationConfig]
+    let iCloudPlaceholder: String?
+}
+
+private struct PermissionProbeLocationConfig: Decodable {
+    let name: String
+    let path: String
+    let sentinelName: String
+}
+
+private struct PermissionProbeFailure: Codable {
+    let phase: String
+    let timestamp: String
+    let error: String
+    let assessment: PermissionPhaseAssessment
+}
+
+private struct PermissionContentSettleResult {
+    let status: ServiceStatus
+    let settled: Bool
+    let reason: String?
 }
 
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
