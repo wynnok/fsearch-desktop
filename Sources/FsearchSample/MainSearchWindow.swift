@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import FsearchService
 import SwiftUI
 
@@ -37,6 +38,8 @@ struct SearchCommands: Commands {
                 .keyboardShortcut(.return, modifiers: .command)
             Button("刷新") { model.refresh() }
                 .keyboardShortcut("r", modifiers: .command)
+            Button("权限与索引重新检查") { model.recheckPermissions() }
+            Button("导出诊断报告…") { model.exportDiagnostics() }
             Button("取消") { model.cancel() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(!model.busy)
@@ -49,7 +52,15 @@ struct SearchCommands: Commands {
     }
 }
 
+private struct InspectorRequestID: Hashable {
+    let snapshot: UUID?
+    let paths: Set<String>
+    let primary: String?
+}
+
 struct SearchView: View {
+    @StateObject private var inspector = FileInspectorState()
+    @StateObject private var actions = FileActionState()
     @ObservedObject var model: SearchModel
     @ObservedObject var selectionState: SearchSelectionState
 
@@ -61,7 +72,7 @@ struct SearchView: View {
                 resultsPane
                     .frame(minWidth: 520, idealWidth: 700)
                 if selectionState.isInspectorVisible {
-                    InspectorView(result: model.selectedResult)
+                    FileInspectorView(result: model.selectedResult, state: inspector)
                         .frame(minWidth: 240, idealWidth: 300)
                 }
             }
@@ -88,6 +99,10 @@ struct SearchView: View {
             }
         }
         .task { await model.runSmokeIfRequested() }
+        .task(id: InspectorRequestID(snapshot: model.inspectorRefreshID, paths: selectionState.selectedPaths, primary: selectionState.selectedPath)) {
+            actions.updatePreview(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil)
+            await inspector.select(paths: selectionState.selectedPaths, primary: selectionState.selectedPath)
+        }
     }
 
     private var configuration: some View {
@@ -101,9 +116,15 @@ struct SearchView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("Fsearch 0.2.1")
+                Text("引擎 \(model.engineVersion)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            SearchFiltersView(configuration: $model.configuration)
+            PermissionStatusView(state: model.permissionStatus, onRecheck: model.recheckPermissions)
+            if let message = model.applicationMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 10) {
@@ -161,13 +182,21 @@ struct SearchView: View {
 
     private var resultsPane: some View {
         VStack(spacing: 0) {
+            if let message = model.selectionMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
             ResultsTableView(
                 results: model.results,
-                selection: $selectionState.selectedPath,
+                selectionState: selectionState,
                 sort: model.sort,
-                onSort: model.sortBy
+                onSort: model.sortBy,
+                actions: actions
             )
             Divider()
+            PathNavigationView(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil, actions: actions)
+            if let message = actions.message {
+                Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
             HStack {
                 if let pagination = model.paginationMessage {
                     Text(pagination)
@@ -261,77 +290,41 @@ private struct SearchQueryEditor: NSViewRepresentable {
     }
 }
 
-private struct InspectorView: View {
-    let result: SearchResult?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("检查器")
-                .font(.headline)
-            if let result {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: result.path))
-                        .resizable()
-                        .frame(width: 56, height: 56)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(URL(fileURLWithPath: result.path).lastPathComponent)
-                            .font(.headline)
-                            .lineLimit(3)
-                            .textSelection(.enabled)
-                        Text(kindName(result.kind))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Divider()
-                inspectorRow("位置", URL(fileURLWithPath: result.path).deletingLastPathComponent().path)
-                inspectorRow("索引大小", "\(result.indexedSize) 字节")
-                inspectorRow(
-                    "修改时间",
-                    Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted()
-                )
-                inspectorRow("关联性分数", String(result.score))
-            } else {
-                Spacer()
-                Text("未选择结果")
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            Spacer()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .accessibilityIdentifier("inspector")
-    }
-
-    private func inspectorRow(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption)
-                .textSelection(.enabled)
+final class NonAnimatingTableView: NSTableView {
+    var openSelection: (() -> Void)?
+    var previewSelection: (() -> Void)?
+    var previewController: FileActionState?
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            panel.dataSource = previewController
+            panel.delegate = previewController
         }
     }
-
-    private func kindName(_ kind: UInt8) -> String {
-        switch kind {
-        case 0: "文件"
-        case 1: "文件夹"
-        case 2: "链接"
-        default: "其他"
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            panel.dataSource = nil
+            panel.delegate = nil
         }
     }
-}
-
-private final class NonAnimatingTableView: NSTableView {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        if !selectedRowIndexes.contains(row) {
+            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+        return super.menu(for: event)
+    }
     override func keyDown(with event: NSEvent) {
         guard event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty else {
             super.keyDown(with: event)
             return
         }
         switch event.keyCode {
+        case 36, 76:
+            openSelection?()
+        case 49:
+            previewSelection?()
         case 125:
             moveSelection(by: 1)
         case 126:
@@ -357,7 +350,7 @@ private final class NonAnimatingTableView: NSTableView {
         enclosingScrollView?.reflectScrolledClipView(clipView)
     }
 
-    private func moveSelection(by delta: Int) {
+    func moveSelection(by delta: Int) {
         guard numberOfRows > 0 else { return }
         let current = selectedRow >= 0 ? selectedRow : 0
         let next = max(0, min(numberOfRows - 1, current + delta))
@@ -368,9 +361,10 @@ private final class NonAnimatingTableView: NSTableView {
 
 private struct ResultsTableView: NSViewRepresentable {
     let results: [SearchResult]
-    @Binding var selection: String?
+    @ObservedObject var selectionState: SearchSelectionState
     let sort: NameSort
     let onSort: (SearchSortColumn) -> Void
+    let actions: FileActionState
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -379,7 +373,23 @@ private struct ResultsTableView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let table = NonAnimatingTableView()
         table.usesAlternatingRowBackgroundColors = true
-        table.allowsMultipleSelection = false
+        table.allowsMultipleSelection = true
+        table.target = context.coordinator
+        table.doubleAction = #selector(Coordinator.openSelection)
+        table.openSelection = { context.coordinator.openSelection() }
+        table.previewSelection = { context.coordinator.previewSelection() }
+        table.previewController = actions
+        actions.movePreviewSelection = { [weak table] delta in table?.moveSelection(by: delta) }
+        let menu = NSMenu()
+        for (title, selector) in [("打开", #selector(Coordinator.openSelection)),
+                                  ("在 Finder 显示所选项目", #selector(Coordinator.revealSelection)),
+                                  ("复制完整路径", #selector(Coordinator.copySelection)),
+                                  ("Quick Look", #selector(Coordinator.previewSelection))] {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            item.target = context.coordinator
+            menu.addItem(item)
+        }
+        table.menu = menu
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
@@ -428,7 +438,16 @@ private struct ResultsTableView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let table = scrollView.documentView as? NSTableView else { return }
-        context.coordinator.parent = self
+        let coordinator = context.coordinator
+        let origin = scrollView.contentView.bounds.origin
+        let firstVisible = table.row(at: NSPoint(x: 0, y: origin.y))
+        let anchor = firstVisible >= 0 && firstVisible < coordinator.parent.results.count
+            ? coordinator.parent.results[firstVisible].path : nil
+        let offset = firstVisible >= 0 ? origin.y - table.rect(ofRow: firstVisible).minY : 0
+        let selectionChanged = coordinator.renderedSelection != selectionState.selectedPaths
+            || coordinator.renderedPrimary != selectionState.selectedPath
+        coordinator.isUpdatingSelection = true
+        coordinator.parent = self
         table.reloadData()
 
         let desiredDescriptors = sortDescriptors
@@ -436,15 +455,20 @@ private struct ResultsTableView: NSViewRepresentable {
             || table.sortDescriptors.first?.ascending != desiredDescriptors.first?.ascending {
             table.sortDescriptors = desiredDescriptors
         }
-
-        context.coordinator.isUpdatingSelection = true
-        if let selection, let row = results.firstIndex(where: { $0.id == selection }) {
-            table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            table.scrollRowToVisible(row)
-        } else {
-            table.deselectAll(nil)
+        let rows = IndexSet(results.indices.filter { selectionState.selectedPaths.contains(results[$0].path) })
+        table.selectRowIndexes(rows, byExtendingSelection: false)
+        if let anchor, let row = results.firstIndex(where: { $0.path == anchor }) {
+            let y = table.rect(ofRow: row).minY + offset
+            scrollView.contentView.scroll(to: NSPoint(x: origin.x, y: max(0, min(y, table.bounds.height - scrollView.contentView.bounds.height))))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
         }
-        context.coordinator.isUpdatingSelection = false
+        if selectionChanged, let primary = selectionState.selectedPath,
+           let row = results.firstIndex(where: { $0.path == primary }) {
+            table.scrollRowToVisible(row)
+        }
+        coordinator.renderedSelection = selectionState.selectedPaths
+        coordinator.renderedPrimary = selectionState.selectedPath
+        coordinator.isUpdatingSelection = false
     }
 
     private var sortDescriptors: [NSSortDescriptor] {
@@ -487,9 +511,36 @@ private struct ResultsTableView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var parent: ResultsTableView
         var isUpdatingSelection = false
+        var renderedSelection: Set<String> = []
+        var renderedPrimary: String?
 
         init(parent: ResultsTableView) {
             self.parent = parent
+        }
+
+        @MainActor private func singleSelection() -> String? {
+            guard parent.selectionState.selectedPaths.count == 1 else {
+                parent.actions.requireSingleSelection()
+                return nil
+            }
+            return parent.selectionState.selectedPath
+        }
+
+        @MainActor @objc func openSelection() {
+            guard let path = singleSelection() else { return }
+            parent.actions.open(path: path)
+        }
+        @MainActor @objc func revealSelection() {
+            guard let path = singleSelection() else { return }
+            parent.actions.reveal(path: path)
+        }
+        @MainActor @objc func copySelection() {
+            guard let path = singleSelection() else { return }
+            parent.actions.copy(path: path)
+        }
+        @MainActor @objc func previewSelection() {
+            guard let path = singleSelection() else { return }
+            parent.actions.togglePreview(path: path)
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -547,9 +598,10 @@ private struct ResultsTableView: NSViewRepresentable {
             guard !isUpdatingSelection,
                   let tableView = notification.object as? NSTableView else { return }
             let row = tableView.selectedRow
-            parent.selection = row >= 0 && row < parent.results.count
-                ? parent.results[row].id
-                : nil
+            let paths = Set(tableView.selectedRowIndexes.compactMap { index in
+                index < parent.results.count ? parent.results[index].path : nil
+            })
+            parent.selectionState.select(paths: paths, primary: row >= 0 && row < parent.results.count ? parent.results[row].path : nil)
         }
 
         func tableView(

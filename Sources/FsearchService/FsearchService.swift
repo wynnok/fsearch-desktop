@@ -13,14 +13,22 @@ public struct SearchRequest: Codable, Sendable {
     public let limit: Int
     public let mode: SearchMode
     public let collectAll: Bool
+    public let scopePath: String?
+    public let showsHidden: Bool
+    public let filters: NameSearchFilters
 
     public init(id: String = UUID().uuidString, query: String, limit: Int = 50,
-                mode: SearchMode = .contains, collectAll: Bool = false) {
+                mode: SearchMode = .contains, collectAll: Bool = false,
+                scopePath: String? = nil, showsHidden: Bool = true,
+                filters: NameSearchFilters = NameSearchFilters()) {
         self.id = id
         self.query = query
         self.limit = limit
         self.mode = mode
         self.collectAll = collectAll
+        self.scopePath = scopePath
+        self.showsHidden = showsHidden
+        self.filters = filters
     }
 }
 
@@ -436,6 +444,9 @@ private struct BridgeRequest: Encodable {
     let mode: SearchMode
     let collectAll: Bool
     let ordinaryForms: [String]
+    let scopePath: String?
+    let showsHidden: Bool
+    let filters: NameSearchFilters
 
     init(_ request: SearchRequest) {
         id = request.id
@@ -443,6 +454,9 @@ private struct BridgeRequest: Encodable {
         limit = request.limit
         mode = request.mode
         collectAll = request.collectAll
+        scopePath = request.scopePath
+        showsHidden = request.showsHidden
+        filters = request.filters
         ordinaryForms = [request.query.precomposedStringWithCanonicalMapping,
                          request.query.decomposedStringWithCanonicalMapping]
     }

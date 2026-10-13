@@ -28,6 +28,7 @@ let package = Package(
         .executableTarget(name: "FsearchSample", dependencies: ["FsearchService"]),
         .executableTarget(name: "FsearchEngineCheck", dependencies: ["FsearchService"]),
         .executableTarget(name: "FsearchResourceCheck", dependencies: ["FsearchService"]),
-        .testTarget(name: "FsearchServiceTests", dependencies: ["FsearchService"])
+        .testTarget(name: "FsearchServiceTests", dependencies: ["FsearchService"]),
+        .testTarget(name: "FsearchAppTests", dependencies: ["FsearchSample", "FsearchService"])
     ]
 )

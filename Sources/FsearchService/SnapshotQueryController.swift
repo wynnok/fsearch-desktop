@@ -19,6 +19,7 @@ public final class SnapshotQueryController: ObservableObject {
     private let loader: Loader
     private var generation = 0
     private var task: Task<NameSnapshot, Error>?
+    private var currentQuery: (request: SearchRequest, sort: NameSort, maximumResults: Int?, pageSize: Int)?
 
     public init(loader: @escaping Loader) { self.loader = loader }
 
@@ -39,6 +40,7 @@ public final class SnapshotQueryController: ObservableObject {
         snapshot = nil
         nextCursor = nil
         phase = .idle
+        currentQuery = nil
     }
 
     public func cancel() {
@@ -50,6 +52,7 @@ public final class SnapshotQueryController: ObservableObject {
                       maximumResults: Int? = nil, pageSize: Int = 50,
                       refresh: Bool = false) async {
         invalidate()
+        currentQuery = (request, sort, maximumResults, pageSize)
         let currentGeneration = generation
         phase = .loading
         let loader = self.loader
@@ -74,13 +77,18 @@ public final class SnapshotQueryController: ObservableObject {
     public func query(_ request: NameSearchRequest, sort: NameSort? = nil,
                       maximumResults: Int? = nil, pageSize: Int = 50,
                       refresh: Bool = false) async {
-        await query(
-            request.bridgeRequest(),
-            sort: sort ?? request.mode.defaultSort,
-            maximumResults: maximumResults,
-            pageSize: pageSize,
-            refresh: refresh
-        )
+        do {
+            await query(
+                try request.bridgeRequest(),
+                sort: sort ?? request.mode.defaultSort,
+                maximumResults: maximumResults,
+                pageSize: pageSize,
+                refresh: refresh
+            )
+        } catch {
+            invalidate()
+            phase = .failed(error.localizedDescription)
+        }
     }
 
     public func loadMore(pageSize: Int = 50) throws {
@@ -88,5 +96,28 @@ public final class SnapshotQueryController: ObservableObject {
         let page = try snapshot.page(after: nextCursor, pageSize: pageSize)
         results.append(contentsOf: page.results)
         self.nextCursor = page.nextCursor
+    }
+
+    // The upstream service already applied its notifications; no second watcher.
+    public func refreshCurrentQuery() async {
+        guard let query = currentQuery else { return }
+        let loadedWindow = max(query.pageSize, results.count)
+        let refreshGeneration = generation + 1
+        await self.query(query.request, sort: query.sort,
+                         maximumResults: query.maximumResults, pageSize: loadedWindow)
+        if generation == refreshGeneration {
+            currentQuery = query
+        }
+    }
+
+    public func ensureVisible(path: String) throws -> Bool {
+        guard let snapshot, !isBusy else { return false }
+        if results.contains(where: { $0.path == path }) { return true }
+        let all = try snapshot.page(pageSize: max(1, snapshot.loadedCount))
+        guard let index = all.results.firstIndex(where: { $0.path == path }) else { return false }
+        let page = try snapshot.page(pageSize: max(results.count, index + 1))
+        results = page.results
+        nextCursor = page.nextCursor
+        return true
     }
 }

@@ -369,13 +369,17 @@ unsafe fn engine_search(
         query
             .scope
             .get_or_insert_with(|| h.root.as_os_str().as_bytes().to_vec());
-        if matches!(request.mode, SearchMode::Contains) && request.query.trim().is_empty() {
+        if matches!(request.mode, SearchMode::Contains | SearchMode::Fuzzy)
+            && request.query.trim().is_empty()
+            && !request.filters.effective()
+            && request.scope_path.is_none()
+        {
             response.is_complete = true;
             return Ok(Vec::new());
         }
         // Upstream huge-limit regression covers usize::MAX; Engine search holds
         // one live read lock for the whole collection, including its overlay.
-        query.limit = if request.collect_all {
+        query.limit = if request.collect_all || !request.shows_hidden {
             usize::MAX
         } else {
             request.limit as usize
@@ -384,6 +388,22 @@ unsafe fn engine_search(
         response.is_complete = request.collect_all;
         found
             .into_iter()
+            .filter(|f| {
+                request.shows_hidden
+                    || (f.kind & fsearch::walk::FLAG_HIDDEN == 0
+                        && !super::hidden_path(
+                            f.path
+                                .strip_prefix(&h.root)
+                                .unwrap_or(&f.path)
+                                .as_os_str()
+                                .as_bytes(),
+                        ))
+            })
+            .take(if request.collect_all {
+                usize::MAX
+            } else {
+                request.limit as usize
+            })
             .map(|f| {
                 Ok(Found {
                     path: f

@@ -15,13 +15,27 @@ public enum NameMatchMode: String, Codable, Sendable, CaseIterable {
 public struct NameSearchRequest: Codable, Sendable {
     public let query: String
     public let mode: NameMatchMode
+    public let scopePath: String?
+    public let showsHidden: Bool
+    public let filters: NameSearchFilters
 
-    public init(query: String, mode: NameMatchMode = .contains) {
+    public init(query: String, mode: NameMatchMode = .contains, scopePath: String? = nil,
+                showsHidden: Bool = true, filters: NameSearchFilters = NameSearchFilters()) {
         self.query = query
         self.mode = mode
+        self.scopePath = scopePath
+        self.showsHidden = showsHidden
+        self.filters = filters
     }
 
-    func bridgeRequest(id: String = UUID().uuidString) -> SearchRequest {
+    func bridgeRequest(id: String = UUID().uuidString) throws -> SearchRequest {
+        try filters.validate()
+        let nameRequest = nameBridgeRequest(id: id)
+        return SearchRequest(id: id, query: nameRequest.query, mode: nameRequest.mode,
+                             scopePath: scopePath, showsHidden: showsHidden, filters: filters)
+    }
+
+    private func nameBridgeRequest(id: String) -> SearchRequest {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return SearchRequest(id: id, query: "", mode: .contains)
         }

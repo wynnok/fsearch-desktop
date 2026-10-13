@@ -113,7 +113,8 @@ extension FsearchService {
         if let maximumResults, maximumResults <= 0 { throw SnapshotError.invalidMaximumResults }
         let response = try search(SearchRequest(
             id: request.id, query: request.query, limit: maximumResults ?? request.limit,
-            mode: request.mode, collectAll: maximumResults == nil
+            mode: request.mode, collectAll: maximumResults == nil,
+            scopePath: request.scopePath, showsHidden: request.showsHidden, filters: request.filters
         ))
         return NameSnapshot(response: response, sort: sort)
     }

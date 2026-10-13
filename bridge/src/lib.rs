@@ -56,6 +56,36 @@ struct Request {
     mode: SearchMode,
     collect_all: bool,
     ordinary_forms: Vec<String>,
+    scope_path: Option<String>,
+    shows_hidden: bool,
+    filters: Filters,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Filters {
+    kind: Option<u8>,
+    extensions: Vec<String>,
+    minimum_size: Option<u64>,
+    maximum_size: Option<u64>,
+    modified_after: Option<u32>,
+    modified_before: Option<u32>,
+}
+
+impl Filters {
+    fn effective(&self) -> bool {
+        self.kind.is_some()
+            || !self.extensions.is_empty()
+            || self.minimum_size.is_some()
+            || self.maximum_size.is_some()
+            || self.modified_after.is_some()
+            || self.modified_before.is_some()
+    }
+}
+
+fn hidden_path(path: &[u8]) -> bool {
+    path.split(|b| *b == b'/')
+        .any(|part| part.starts_with(b"."))
 }
 
 #[derive(Deserialize)]
@@ -185,10 +215,12 @@ unsafe fn search(
     inject_panic: bool,
 ) -> *mut c_char {
     let mut response = Response::new(String::new());
+    let mut result_limit = None;
     let result = contained(|| -> Result<Vec<Found>, String> {
         let request: Request = serde_json::from_str(unsafe { input(request_json)? })
             .map_err(|_| "Invalid search request".to_string())?;
         response.request_id = request.id.clone();
+        result_limit = (!request.collect_all).then_some(request.limit as usize);
         let mut query = make_query(&request)?;
         if handle.is_null() {
             return Err("Sample service is not open".into());
@@ -205,21 +237,54 @@ unsafe fn search(
         }
         if matches!(request.mode, SearchMode::Contains | SearchMode::Fuzzy)
             && request.query.trim().is_empty()
+            && !request.filters.effective()
+            && request.scope_path.is_none()
         {
             response.is_complete = true;
             return Ok(Vec::new());
+        }
+        if let Some(scope) = &request.scope_path {
+            let scope = PathBuf::from(scope);
+            // Sample indexes are rooted at virtual '/', unlike Engine indexes.
+            if let Ok(relative) = scope.strip_prefix(&sample.root) {
+                query.scope = Some(
+                    format!("/{}", relative.to_string_lossy())
+                        .trim_end_matches('/')
+                        .as_bytes()
+                        .to_vec(),
+                );
+            } else if sample.root.starts_with(&scope) {
+                query.scope = None;
+            } else {
+                response.is_complete = true;
+                return Ok(Vec::new());
+            }
         }
         if query.grep.is_some() {
             return Err("Text content queries are not supported in sample mode".into());
         }
         query.limit = request.limit as usize;
-        if request.collect_all {
+        if request.collect_all || !request.shows_hidden {
             query.limit = sample.live.base.n.max(1);
         }
         // The immutable sample has no overlay: n is a proven upper bound.
         response.is_complete = query.limit >= sample.live.base.n;
         let hits = Searcher { live: &sample.live }.search(&query);
         hits.into_iter()
+            .filter(|hit| {
+                if request.shows_hidden {
+                    return true;
+                }
+                let i = hit.idx as usize;
+                let mut path = Vec::new();
+                sample.live.base.path(i, &mut path);
+                sample.live.base.kind(i) & walk::FLAG_HIDDEN == 0 && !hidden_path(&path)
+            })
+            .take(if request.collect_all {
+                usize::MAX
+            } else {
+                request.limit as usize + 1
+            })
             .map(|hit| {
                 let i = hit.idx as usize;
                 let mut path = Vec::new();
@@ -239,7 +304,15 @@ unsafe fn search(
             .collect()
     });
     match result {
-        Ok(Ok(results)) => response.results = results,
+        Ok(Ok(mut results)) => {
+            if let Some(limit) = result_limit {
+                if results.len() > limit {
+                    results.truncate(limit);
+                    response.is_complete = false;
+                }
+            }
+            response.results = results;
+        }
         Ok(Err(error)) => {
             response.error = Some(error);
             response.is_complete = false;
@@ -263,7 +336,7 @@ fn make_query(request: &Request) -> Result<fsearch::Query, String> {
     if !(1..=1000).contains(&request.limit) {
         return Err("Result limit must be between 1 and 1000".into());
     }
-    match request.mode {
+    let mut query = match request.mode {
         SearchMode::Advanced => fsearch::Query::parse(&request.query, "/")
             .map_err(|_| "Invalid advanced query; check its syntax".to_string()),
         SearchMode::Contains => {
@@ -281,7 +354,41 @@ fn make_query(request: &Request) -> Result<fsearch::Query, String> {
             Ok(query)
         }
         SearchMode::Fuzzy => Ok(fuzzy_query(request)),
+    }?;
+    if let Some(scope) = &request.scope_path {
+        if !scope.starts_with('/') || scope.contains('\0') {
+            return Err("Search scope must be an absolute path".into());
+        }
+        let normalized = scope.trim_end_matches('/');
+        query.scope = Some(if normalized.is_empty() {
+            b"/".to_vec()
+        } else {
+            normalized.as_bytes().to_vec()
+        });
     }
+    if request.filters.kind.is_some() {
+        query.kind = request.filters.kind;
+    }
+    if !request.filters.extensions.is_empty() {
+        query.exts = request
+            .filters
+            .extensions
+            .iter()
+            .map(|e| e.trim().trim_start_matches('.').to_lowercase().into_bytes())
+            .collect();
+    }
+    query.size = (
+        request.filters.minimum_size.unwrap_or(query.size.0),
+        request.filters.maximum_size.unwrap_or(query.size.1),
+    );
+    query.mtime = (
+        request.filters.modified_after.unwrap_or(query.mtime.0),
+        request.filters.modified_before.unwrap_or(query.mtime.1),
+    );
+    if query.size.0 > query.size.1 || query.mtime.0 > query.mtime.1 {
+        return Err("Invalid filter range".into());
+    }
+    Ok(query)
 }
 
 fn fuzzy_query(request: &Request) -> fsearch::Query {

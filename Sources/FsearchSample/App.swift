@@ -11,8 +11,31 @@ import SwiftUI
 
 @MainActor
 final class SearchModel: ObservableObject {
+    let updates = ManualUpdateState()
+    @Published var showsUpdates = false
+    @Published private(set) var engineVersion = "尚未读取"
+    @Published private(set) var selectionMessage: String?
+    @Published private(set) var applicationMessage: String?
+    @Published private(set) var observedChangeCount = 0
+    lazy var permissionStatus = PermissionStatusModel(
+        onboardingDismissed: preferencesStore?.onboardingDismissed ?? false,
+        onDismiss: { [weak self] in self?.persistPreferences(onboardingDismissed: true) }
+    )
+    private var preferencesStore: LocalPreferences?
+    private var restoringPreferences = false
+    private var preferenceObservation: AnyCancellable?
+    private var pollingTask: Task<Void, Never>?
+    private var changesPending = false
+    private var validationMessage: String?
+    private var lastServiceError: Error?
     @Published var configuration = SearchConfiguration() {
-        didSet { if configuration != oldValue { invalidate() } }
+        didSet {
+            guard configuration != oldValue, !restoringPreferences else { return }
+            invalidate()
+            persistPreferences()
+            if configuration.scope != oldValue.scope || configuration.showsHidden != oldValue.showsHidden
+                || configuration.filters != oldValue.filters { submit() }
+        }
     }
     let selectionState = SearchSelectionState()
     @Published private(set) var activity: SearchActivity = .idle
@@ -25,6 +48,7 @@ final class SearchModel: ObservableObject {
     var busy: Bool { controller?.isBusy ?? false }
     var nextCursor: SnapshotCursor? { controller?.nextCursor }
     private var snapshot: NameSnapshot? { controller?.snapshot }
+    var inspectorRefreshID: UUID? { controller?.snapshot?.id }
     var query: String {
         get { configuration.query }
         set { configuration.query = newValue }
@@ -51,6 +75,7 @@ final class SearchModel: ObservableObject {
         return results.first { $0.id == selection }
     }
     var message: String {
+        if let validationMessage { return validationMessage }
         guard let controller else { return localMessage }
         switch controller.phase {
         case .idle: return localMessage
@@ -81,6 +106,7 @@ final class SearchModel: ObservableObject {
         }
     }
     var statusKind: SearchStatusKind {
+        if validationMessage != nil { return .error }
         guard let controller else { return .prompt }
         switch controller.phase {
         case .idle: return .prompt
@@ -102,8 +128,16 @@ final class SearchModel: ObservableObject {
     private var permissionProbeStarted = false
     private let pageSize = 2
 
-    init() {
-        let arguments = CommandLine.arguments
+    init(arguments: [String] = CommandLine.arguments, preferences: LocalPreferences? = nil) {
+        let isValidation = arguments.contains("--smoke") || arguments.contains("--engine-smoke")
+            || arguments.contains("--permission-probe")
+        preferencesStore = isValidation ? nil : (preferences ?? LocalPreferences.applicationStore)
+        restoringPreferences = true
+        preferencesStore?.restore(configuration: &configuration, selection: selectionState)
+        restoringPreferences = false
+        preferenceObservation = selectionState.$isInspectorVisible.dropFirst().sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.persistPreferences() }
+        }
         let bundledSample = Bundle.main.resourceURL?.appendingPathComponent("sample", isDirectory: true)
         guard arguments.count >= 2 || bundledSample.map({ FileManager.default.fileExists(atPath: $0.path) }) == true else {
             localMessage = "请使用 bash scripts/dev.sh run 指定项目内受控样本。"
@@ -140,6 +174,8 @@ final class SearchModel: ObservableObject {
             connectController()
         } catch {
             localMessage = "样本初始化失败：\(error.localizedDescription)"
+            lastServiceError = error
+            permissionStatus.recordFailure(error)
         }
     }
 
@@ -148,11 +184,88 @@ final class SearchModel: ObservableObject {
         let controller = SnapshotQueryController(service: service)
         self.controller = controller
         observation = controller.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.pollService()
+                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            }
+        }
+    }
+
+    private func persistPreferences(onboardingDismissed: Bool? = nil) {
+        do {
+            try preferencesStore?.save(configuration: configuration,
+                                       inspectorVisible: selectionState.isInspectorVisible,
+                                       onboardingDismissed: onboardingDismissed)
+        } catch {
+            applicationMessage = "偏好保存失败；当前搜索仍可使用。"
+        }
+    }
+
+    deinit { pollingTask?.cancel() }
+
+    private func pollService() async {
+        guard let service else { return }
+        do {
+            let status = try await service.status()
+            let changes = try await service.changes()
+            if permissionStatus.status != status || permissionStatus.failureMessage != nil {
+                permissionStatus.apply(status)
+            }
+            if engineVersion != status.upstreamVersion { engineVersion = status.upstreamVersion }
+            lastServiceError = nil
+            if !changes.isEmpty {
+                observedChangeCount += changes.count
+                changesPending = true
+            }
+            guard changesPending, let controller, !controller.isBusy,
+                  controller.phase == .complete || controller.phase == .partial else { return }
+            changesPending = false
+            let selected = selection
+            let selectedPaths = selectionState.selectedPaths
+            let generation = searchGeneration
+            await controller.refreshCurrentQuery()
+            guard generation == searchGeneration, selection == selected,
+                  selectionState.selectedPaths == selectedPaths else { return }
+            restoreSelection(selected, paths: selectedPaths)
+        } catch {
+            lastServiceError = error
+            permissionStatus.recordFailure(error)
+        }
+    }
+
+    func recheckPermissions() {
+        Task {
+            guard let service else { return }
+            await permissionStatus.recheck { try await service.status() }
+        }
+    }
+
+    func exportDiagnostics() {
+        let error: Error?
+        if case .failed(let message) = controller?.phase { error = FsearchError.query(message) }
+        else { error = lastServiceError }
+        if let message = DiagnosticExporter.present(status: permissionStatus.status, error: error) {
+            applicationMessage = message
+        }
+    }
+
+    private func restoreSelection(_ path: String?, paths: Set<String>) {
+        guard !paths.isEmpty, let controller,
+              controller.phase == .complete || controller.phase == .partial else { return }
+        let surviving = Set(paths.filter { (try? controller.ensureVisible(path: $0)) == true })
+        if surviving != paths && controller.phase == .partial {
+            selectionMessage = "当前部分结果尚未包含所有所选文件；未确认它们是否仍符合筛选。"
+            return
+        }
+        selectionState.select(paths: surviving, primary: path.flatMap { surviving.contains($0) ? $0 : nil })
+        selectionMessage = surviving == paths ? nil : "所选文件已删除、移动或不再符合当前筛选。"
     }
 
     private func invalidate() {
         searchGeneration += 1
         activity = .idle
+        validationMessage = nil
         controller?.invalidate()
         localMessage = "条件已改变，请重新查询。旧行不代表当前结果。"
     }
@@ -168,15 +281,25 @@ final class SearchModel: ObservableObject {
         guard let controller else { return }
         searchGeneration += 1
         let generation = searchGeneration
-        guard hasQueryInput else {
+        guard configuration.hasEffectiveQuery else {
             activity = .idle
             controller.invalidate()
             localMessage = "请输入文件名后查询；空输入不会列出全部文件。"
             return
         }
+        let request: NameSearchRequest
+        do { request = try configuration.request() }
+        catch {
+            controller.invalidate()
+            validationMessage = "筛选无效：\(error.localizedDescription)。请修正后重试。"
+            return
+        }
+        validationMessage = nil
+        let selected = selection
+        let selectedPaths = selectionState.selectedPaths
         activity = requestedActivity
         await controller.query(
-            NameSearchRequest(query: query, mode: nameMode),
+            request,
             sort: sortPreference,
             maximumResults: maximumResults,
             pageSize: pageSize,
@@ -184,6 +307,9 @@ final class SearchModel: ObservableObject {
         )
         if generation == searchGeneration {
             activity = .idle
+            if selection == selected && selectionState.selectedPaths == selectedPaths {
+                restoreSelection(selected, paths: selectedPaths)
+            }
         }
     }
 
@@ -313,6 +439,12 @@ final class SearchModel: ObservableObject {
                         "Native final page failed")
             try await capture("page-final", under: output)
             try await runWindowInteractionSmoke(under: output)
+            if let window = NSApplication.shared.windows.first(where: { $0.isVisible }) {
+                let checks = try await NativeFileActionsSmoke.run(window: window, selectionState: selectionState)
+                try require(checks.values.allSatisfy { $0 }, "Native file action checks failed: \(checks)")
+                try JSONEncoder().encode(checks).write(to: output.appendingPathComponent("file-actions.json"))
+                print("Native file actions and Quick Look: passed (Finder visible selection remains unverified)")
+            }
 
             sort = .descending
             await search()
@@ -610,29 +742,43 @@ final class SearchModel: ObservableObject {
             query = "engine-proof"
             await search()
             try require(filenames == ["engine-proof.txt"], "Native Engine query failed")
+            query = "engine-"
+            await search()
+            selection = results.first?.path
+            let retainedQuery = query
+            let retainedSelection = selection
             let output = workspace.appendingPathComponent("index")
             try await capture("engine-query", under: output)
             guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
                 throw FsearchError.bridge("Engine window unavailable")
             }
-            _ = try await service.changes()
+            let changeCount = observedChangeCount
             window.close()
+            try require(!window.isVisible, "Close did not hide the main window")
             let fixture = workspace.appendingPathComponent("fixtures/engine-window.txt")
             try Data("change while closed".utf8).write(to: fixture)
             var changedWhileClosed = false
             for _ in 0..<200 {
-                let response = try await service.search(SearchRequest(query: "engine-window", collectAll: true))
-                if response.results.count == 1 { changedWhileClosed = true; break }
+                if snapshot?.totalCount == 3 { changedWhileClosed = true; break }
                 try await Task.sleep(for: .milliseconds(100))
             }
             try require(changedWhileClosed, "Index did not follow changes with window closed")
-            let changes = try await service.changes()
-            try require(!changes.isEmpty, "No Engine change notification while closed")
-            window.makeKeyAndOrderFront(nil)
-            query = "engine-window"
-            await search()
-            try require(filenames == ["engine-window.txt"], "Reopened window did not query live Engine")
+            try require(observedChangeCount > changeCount, "No Engine change notification while closed")
+            try require(MainWindowLifecycle.shared.reopen(), "Menu reopen failed")
+            try require(query == retainedQuery && selection == retainedSelection,
+                        "Reopened window lost running input or selection")
+            loadMore()
+            try require(filenames.contains("engine-window.txt"), "Reopened window did not retain refreshed results")
             try await capture("engine-reopened", under: output)
+            selection = fixture.path
+            try FileManager.default.removeItem(at: fixture)
+            for _ in 0..<200 {
+                if selection == nil && !filenames.contains("engine-window.txt") { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try require(selection == nil && selectionMessage != nil,
+                        "Deleted selection did not explain its disappearance")
+            try await capture("engine-deleted-selection", under: output)
             try await service.saveIndex()
             try await Task.sleep(for: .seconds(2))
             print("Native Engine query, close, background update, notification, reopen, save and application exit: passed")
@@ -859,6 +1005,10 @@ private struct PermissionContentSettleResult {
 
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainWindowLifecycle.shared.reopen()
+        return true
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -871,11 +1021,16 @@ struct FsearchSampleApp: App {
     @StateObject private var model = SearchModel()
 
     var body: some Scene {
-        WindowGroup("Fsearch") {
+        Window("Fsearch", id: "main-search") {
             SearchView(model: model, selectionState: model.selectionState)
+                .background(MainWindowAttachment())
+                .sheet(isPresented: $model.showsUpdates) {
+                    UpdateView(state: model.updates, engineVersion: model.engineVersion)
+                }
         }
         .commands {
             SearchCommands(model: model, selectionState: model.selectionState)
+            ApplicationCommands(showUpdates: { model.showsUpdates = true })
         }
     }
 }
