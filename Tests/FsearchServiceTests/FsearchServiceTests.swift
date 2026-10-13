@@ -36,7 +36,7 @@ final class FsearchServiceTests: XCTestCase {
 
     func testNoMatchIsASuccessfulEmptyResponse() async throws {
         let service = try FsearchService(sampleDirectory: sampleDirectory)
-        let response = try await service.search(SearchRequest(query: "^absent-fixture-name$"))
+        let response = try await service.search(SearchRequest(query: "^absent-fixture-name$", mode: .advanced))
         XCTAssertTrue(response.results.isEmpty)
         XCTAssertTrue(response.status.ready)
     }
@@ -50,7 +50,7 @@ final class FsearchServiceTests: XCTestCase {
     func testInvalidQueryIsRecoverable() async throws {
         let service = try FsearchService(sampleDirectory: sampleDirectory)
         do {
-            _ = try await service.search(SearchRequest(query: "re:["))
+            _ = try await service.search(SearchRequest(query: "re:[", mode: .advanced))
             XCTFail("Invalid regex must fail")
         } catch FsearchError.query(let message) {
             XCTAssertFalse(message.isEmpty)
@@ -79,7 +79,7 @@ final class FsearchServiceTests: XCTestCase {
         let filename = "created-\(UUID().uuidString).txt"
         try Data("live".utf8).write(to: directory.appendingPathComponent(filename))
         let service = try FsearchService(sampleDirectory: directory)
-        let response = try await service.search(SearchRequest(query: "^created-"))
+        let response = try await service.search(SearchRequest(query: "^created-", mode: .advanced))
         XCTAssertEqual(response.results.map(\.path), [directory.appendingPathComponent(filename).path])
         XCTAssertEqual(response.results.first?.indexedSize, 4)
     }

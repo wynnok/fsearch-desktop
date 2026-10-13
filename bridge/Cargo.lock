@@ -62,6 +62,7 @@ name = "fsearch-bridge"
 version = "0.1.0"
 dependencies = [
  "fsearch",
+ "regex",
  "serde",
  "serde_json",
 ]
