@@ -3,6 +3,17 @@ import Foundation
 public enum NameSort: String, Sendable {
     case ascending
     case descending
+    case sizeAscending
+    case sizeDescending
+    case modifiedAscending
+    case modifiedDescending
+
+    public var ascendingDirection: Bool {
+        switch self {
+        case .ascending, .sizeAscending, .modifiedAscending: true
+        case .descending, .sizeDescending, .modifiedDescending: false
+        }
+    }
 }
 
 public enum SnapshotError: Error, Equatable, LocalizedError, Sendable {
@@ -49,16 +60,26 @@ public struct NameSnapshot: Sendable {
         isComplete = response.isComplete
         self.sort = sort
         results = response.results.sorted { lhs, rhs in
-            let leftName = URL(fileURLWithPath: lhs.path).lastPathComponent
-            let rightName = URL(fileURLWithPath: rhs.path).lastPathComponent
-            let comparison = leftName.localizedStandardCompare(rightName)
+            let comparison: ComparisonResult
+            switch sort {
+            case .ascending, .descending:
+                let leftName = URL(fileURLWithPath: lhs.path).lastPathComponent
+                let rightName = URL(fileURLWithPath: rhs.path).lastPathComponent
+                comparison = leftName.localizedStandardCompare(rightName)
+            case .sizeAscending, .sizeDescending:
+                comparison = lhs.indexedSize == rhs.indexedSize ? .orderedSame
+                    : lhs.indexedSize < rhs.indexedSize ? .orderedAscending : .orderedDescending
+            case .modifiedAscending, .modifiedDescending:
+                comparison = lhs.modifiedAt == rhs.modifiedAt ? .orderedSame
+                    : lhs.modifiedAt < rhs.modifiedAt ? .orderedAscending : .orderedDescending
+            }
             if comparison == .orderedSame {
                 // Byte order also separates canonically equivalent Unicode paths.
-                return sort == .ascending
+                return sort.ascendingDirection
                     ? lhs.path.utf8.lexicographicallyPrecedes(rhs.path.utf8)
                     : rhs.path.utf8.lexicographicallyPrecedes(lhs.path.utf8)
             }
-            return comparison == (sort == .ascending ? .orderedAscending : .orderedDescending)
+            return comparison == (sort.ascendingDirection ? .orderedAscending : .orderedDescending)
         }
     }
 
@@ -81,6 +102,7 @@ extension FsearchService {
         sort: NameSort = .ascending,
         maximumResults: Int? = nil
     ) throws -> NameSnapshot {
+        try Task.checkCancellation()
         if let maximumResults, maximumResults <= 0 { throw SnapshotError.invalidMaximumResults }
         let response = try search(SearchRequest(
             id: request.id, query: request.query, limit: maximumResults ?? request.limit,

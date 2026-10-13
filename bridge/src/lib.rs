@@ -6,9 +6,11 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Once;
 use std::sync::atomic::{AtomicUsize, Ordering};
+mod engine;
 
 static ACTIVE_BRIDGE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static PANIC_HOOK: Once = Once::new();
+const UPSTREAM_VERSION: &str = "0.2.1 / 88e63fdf850cf7749deae8198b187accd21f8ba5";
 
 struct ActiveCall;
 
@@ -98,7 +100,7 @@ impl Response {
                 mode: "sample",
                 ready: true,
                 engine_validated: false,
-                upstream_version: "0.2.1 / 88e63fdf850cf7749deae8198b187accd21f8ba5",
+                upstream_version: UPSTREAM_VERSION,
             },
             error: None,
             error_kind: None,
@@ -180,13 +182,8 @@ unsafe fn search(
     let result = contained(|| -> Result<Vec<Found>, String> {
         let request: Request = serde_json::from_str(unsafe { input(request_json)? })
             .map_err(|_| "Invalid search request".to_string())?;
-        response.request_id = request.id;
-        if response.request_id.is_empty() || response.request_id.contains('\0') {
-            return Err("Request identifier must be nonempty and contain no NUL".into());
-        }
-        if request.query.contains('\0') {
-            return Err("Query must contain no NUL".into());
-        }
+        response.request_id = request.id.clone();
+        let mut query = make_query(&request)?;
         if handle.is_null() {
             return Err("Sample service is not open".into());
         }
@@ -200,31 +197,10 @@ unsafe fn search(
                 std::panic::resume_unwind(payload);
             }
         }
-        if !(1..=1000).contains(&request.limit) {
-            return Err("Result limit must be between 1 and 1000".into());
+        if matches!(request.mode, SearchMode::Contains) && request.query.trim().is_empty() {
+            response.is_complete = true;
+            return Ok(Vec::new());
         }
-        let mut query = match request.mode {
-            SearchMode::Advanced => fsearch::Query::parse(&request.query, "/")
-                .map_err(|_| "Invalid advanced query; check its syntax".to_string())?,
-            SearchMode::Contains => {
-                if request.query.trim().is_empty() {
-                    response.is_complete = true;
-                    return Ok(Vec::new());
-                }
-                let mut query = fsearch::Query::parse("", "/")?;
-                let alternatives = request
-                    .ordinary_forms
-                    .iter()
-                    .map(|form| regex::escape(form))
-                    .collect::<Vec<_>>()
-                    .join("|");
-                query.name_re = Some(
-                    regex::bytes::Regex::new(&format!("(?i)(?:{})", alternatives))
-                        .map_err(|_| "Name query is too complex".to_string())?,
-                );
-                query
-            }
-        };
         if query.grep.is_some() {
             return Err("Text content queries are not supported in sample mode".into());
         }
@@ -267,6 +243,36 @@ unsafe fn search(
         }
     }
     serde_json::to_string(&response).map_or(std::ptr::null_mut(), owned_string)
+}
+
+fn make_query(request: &Request) -> Result<fsearch::Query, String> {
+    if request.id.is_empty() || request.id.contains('\0') {
+        return Err("Request identifier must be nonempty and contain no NUL".into());
+    }
+    if request.query.contains('\0') {
+        return Err("Query must contain no NUL".into());
+    }
+    if !(1..=1000).contains(&request.limit) {
+        return Err("Result limit must be between 1 and 1000".into());
+    }
+    match request.mode {
+        SearchMode::Advanced => fsearch::Query::parse(&request.query, "/")
+            .map_err(|_| "Invalid advanced query; check its syntax".to_string()),
+        SearchMode::Contains => {
+            let mut query = fsearch::Query::parse("", "/")?;
+            let alternatives = request
+                .ordinary_forms
+                .iter()
+                .map(|form| regex::escape(form))
+                .collect::<Vec<_>>()
+                .join("|");
+            query.name_re = Some(
+                regex::bytes::Regex::new(&format!("(?i)(?:{})", alternatives))
+                    .map_err(|_| "Name query is too complex".to_string())?,
+            );
+            Ok(query)
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
