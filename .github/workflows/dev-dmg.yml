@@ -2,6 +2,10 @@ name: Development DMG
 
 on:
   push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "**"
   pull_request:
   workflow_dispatch:
 
@@ -17,6 +21,8 @@ jobs:
     name: Build and verify development DMG
     runs-on: macos-14
     timeout-minutes: 90
+    env:
+      FSEARCH_DEV_RUST_VERSION: "1.99.0"
 
     steps:
       - name: Check out exact revision
@@ -35,8 +41,20 @@ jobs:
           restore-keys: |
             dev-dmg-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Prepare isolated Rust targets
-        run: bash scripts/architecture.sh prepare
+      - name: Prepare pinned project-local Rust toolchain
+        run: |
+          set -euo pipefail
+          export RUSTUP_HOME="$PWD/.build/rustup-home"
+          mkdir -p "$RUSTUP_HOME"
+          rustup toolchain install "$FSEARCH_DEV_RUST_VERSION" \
+            --profile minimal --no-self-update \
+            --target aarch64-apple-darwin,x86_64-apple-darwin
+          printf '%s\n' "$FSEARCH_DEV_RUST_VERSION" > "$RUSTUP_HOME/toolchain-version"
+          ACTUAL="$(RUSTUP_TOOLCHAIN="$FSEARCH_DEV_RUST_VERSION" rustc -V | awk '{print $2}')"
+          [[ "$ACTUAL" == "$FSEARCH_DEV_RUST_VERSION" ]]
+
+      - name: Verify approved upstream pin
+        run: bash scripts/check-upstream-pin.sh
 
       - name: Check
         run: bash scripts/dev.sh check
@@ -58,6 +76,7 @@ jobs:
             .build/dev-dmg/output/*.dmg
             .build/dev-dmg/output/SHA256SUMS
             .build/dev-dmg/output/build-manifest.txt
+            .build/dev-dmg/output/THIRD-PARTY-NOTICES.txt
             .build/dev-dmg/output/verification-report.txt
           if-no-files-found: error
           retention-days: 14

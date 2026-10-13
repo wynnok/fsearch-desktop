@@ -1,13 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 source "$(dirname "$0")/build-environment.sh"
+source "$PROJECT_ROOT/scripts/dev-dmg-common.sh"
 
-APP_VERSION="${FSEARCH_DEV_VERSION:-0.1.0}"
+APP_VERSION="${FSEARCH_DEV_VERSION:-$DEV_DMG_DEFAULT_VERSION}"
 case "$APP_VERSION" in
     *[!0-9A-Za-z._-]*) echo "FSEARCH_DEV_VERSION contains unsupported characters" >&2; exit 2 ;;
 esac
 
-UPSTREAM_VERSION="$(sed -n 's/^const UPSTREAM_VERSION: &str = "\(.*\)";$/\1/p' "$PROJECT_ROOT/bridge/src/lib.rs")"
+bash "$PROJECT_ROOT/scripts/check-upstream-pin.sh"
+
+UPSTREAM_VERSION="$(dev_dmg_upstream_version)"
 [[ -n "$UPSTREAM_VERSION" ]] || { echo "Cannot read the embedded Fsearch version" >&2; exit 1; }
 
 BUILD_COMMIT="$(git rev-parse HEAD)"
@@ -18,14 +21,15 @@ else
     WORKTREE_STATE=clean
 fi
 
-APP_NAME="Fsearch Desktop Development"
-DMG_NAME="Fsearch-Desktop-${APP_VERSION}-dev-${BUILD_SHORT_COMMIT}-universal.dmg"
-OUTPUT_DIR="$PROJECT_ROOT/.build/dev-dmg/output"
-PACKAGE_DIR="$PROJECT_ROOT/.build/dev-dmg/package"
+APP_NAME="$DEV_DMG_APP_NAME"
+DMG_NAME="${DEV_DMG_ARTIFACT_PREFIX}-${APP_VERSION}-dev-${BUILD_SHORT_COMMIT}-universal.dmg"
+OUTPUT_DIR="$DEV_DMG_OUTPUT_DIR"
+PACKAGE_DIR="$DEV_DMG_ROOT/package"
 STAGING_APP="$PACKAGE_DIR/$APP_NAME.app"
 DMG_ROOT="$PACKAGE_DIR/dmg-root"
 DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
 MANIFEST="$OUTPUT_DIR/build-manifest.txt"
+NOTICES="$OUTPUT_DIR/THIRD-PARTY-NOTICES.txt"
 DEVELOPMENT_README="$PACKAGE_DIR/DEVELOPMENT-README.txt"
 
 select_architecture arm64 release
@@ -74,6 +78,8 @@ done
 rm -rf "$PACKAGE_DIR" "$OUTPUT_DIR"
 mkdir -p "$PACKAGE_DIR" "$OUTPUT_DIR" "$DMG_ROOT/build-records"
 
+bash "$PROJECT_ROOT/scripts/generate-third-party-notices.sh" "$NOTICES"
+
 ditto "$ARM_APP" "$STAGING_APP"
 lipo -create "$ARM_EXECUTABLE" "$X86_EXECUTABLE" -output "$STAGED_EXECUTABLE"
 
@@ -84,12 +90,13 @@ set_plist_string CFBundleShortVersionString "$APP_VERSION"
 set_plist_string FsearchDevelopmentVersion "${APP_VERSION}-dev.${BUILD_SHORT_COMMIT}"
 set_plist_string FsearchBuildCommit "$BUILD_COMMIT"
 set_plist_string FsearchEngineVersion "$UPSTREAM_VERSION"
-set_plist_string FsearchPackageStatus development-unnotarized
+set_plist_string FsearchPackageStatus "$DEV_DMG_PACKAGE_STATUS"
 set_plist_bool FsearchDevelopmentBuild true
 set_plist_bool FsearchNotarized false
 
 cp "$PROJECT_ROOT/LICENSE" "$STAGED_RESOURCES/PROJECT-LICENSE.txt"
 cp "$PROJECT_ROOT/bridge/FSEARCH-LICENSE" "$STAGED_RESOURCES/FSEARCH-LICENSE.txt"
+cp "$NOTICES" "$STAGED_RESOURCES/THIRD-PARTY-NOTICES.txt"
 cp "$PROJECT_ROOT/.build/artifacts/arm64/release/build-record.txt" "$STAGED_RESOURCES/BUILD-RECORD-arm64.txt"
 cp "$PROJECT_ROOT/.build/artifacts/x86_64/release/build-record.txt" "$STAGED_RESOURCES/BUILD-RECORD-x86_64.txt"
 
@@ -109,7 +116,7 @@ EOF
 
 cat > "$MANIFEST" <<EOF
 Fsearch Desktop Development Package
-Package status: development-unnotarized
+Package status: $DEV_DMG_PACKAGE_STATUS
 Release channel: development verification artifact only
 Application version: $APP_VERSION
 Git commit: $BUILD_COMMIT
@@ -118,14 +125,18 @@ Engine: Fsearch $UPSTREAM_VERSION
 Architectures: arm64 x86_64
 Minimum macOS: 13.0
 Build timestamp (UTC): $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+Runner image: $(dev_dmg_runner_image)
+Rust requested pin: $(dev_dmg_rust_pin)
 Rust: $(rustc -V)
 Cargo: $(cargo -V)
 Swift: $(swift --version | awk 'NR == 1 {print}')
 Xcode: $(xcodebuild -version | awk 'NR <= 2 {printf "%s%s", separator, $0; separator="; "}')
 License SHA-256 (project): $(shasum -a 256 "$PROJECT_ROOT/LICENSE" | awk '{print $1}')
 License SHA-256 (Fsearch): $(shasum -a 256 "$PROJECT_ROOT/bridge/FSEARCH-LICENSE" | awk '{print $1}')
+Third-party notices SHA-256: $(shasum -a 256 "$NOTICES" | awk '{print $1}')
 Cargo lock SHA-256: $(shasum -a 256 "$PROJECT_ROOT/bridge/Cargo.lock" | awk '{print $1}')
 Final DMG SHA-256: see SHA256SUMS
+$(dev_dmg_toolchain_pin_note)
 
 Runtime verification is recorded separately by scripts/verify-dev-dmg.sh.
 The package must not be represented as stable, signed, notarized, or alpha-accepted.
@@ -138,6 +149,7 @@ cp "$DEVELOPMENT_README" "$DMG_ROOT/DEVELOPMENT-README.txt"
 cp "$MANIFEST" "$DMG_ROOT/BUILD-MANIFEST.txt"
 cp "$PROJECT_ROOT/LICENSE" "$DMG_ROOT/PROJECT-LICENSE.txt"
 cp "$PROJECT_ROOT/bridge/FSEARCH-LICENSE" "$DMG_ROOT/FSEARCH-LICENSE.txt"
+cp "$NOTICES" "$DMG_ROOT/THIRD-PARTY-NOTICES.txt"
 cp "$PROJECT_ROOT/.build/artifacts/arm64/release/build-record.txt" "$DMG_ROOT/build-records/arm64.txt"
 cp "$PROJECT_ROOT/.build/artifacts/x86_64/release/build-record.txt" "$DMG_ROOT/build-records/x86_64.txt"
 ln -s /Applications "$DMG_ROOT/Applications"
