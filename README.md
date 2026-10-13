@@ -14,6 +14,7 @@
 | [支持状态与已知限制](docs/product/support-status.md) | 两芯片/最低系统证据、默认样本模式与未解除门禁 |
 | [T27 alpha 交付判定](docs/implementation/T27.md) | 干净提交对应 DMG、安装证据、资源报告及 Wave 5 前置条件 |
 | [T29 发布链路](docs/implementation/T29.md) / [T30 文本查询](docs/implementation/T30.md) | 已实施的发布门禁与受控真实 Engine 正文入口，外部验收仍保留 |
+| [T31 内容选项](docs/implementation/T31.md) / [T32 续查高亮](docs/implementation/T32.md) / [T33 文本验收](docs/implementation/T33.md) | 内容范围/筛选/正则/大小写、cursor 续查、Unicode 高亮及真实 Engine 原生验收 |
 | [Wave 4 旅程验收](docs/implementation/Wave4.md) | T25/T26/T28 的证据、失败与未验证项 |
 | [Tickets 索引](docs/tickets/README.md) | 33 张已批准的纵向执行切片、主 Spec 归属、原生阻塞边及认领顺序 |
 | [Spec 索引](docs/specs/README.md) | 14 份已发布规格、原生父子/阻塞关系、执行顺序与 23 项选择追踪 |

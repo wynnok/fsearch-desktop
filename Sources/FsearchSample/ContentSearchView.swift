@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class ContentSearchState: ObservableObject {
     @Published var pattern = "" {
-        didSet { if pattern != oldValue { generation += 1; response = nil; busy = false; message = "输入已改变，请重新查询。" } }
+        didSet { if pattern != oldValue { invalidateResult("输入已改变，请重新查询。") } }
     }
     @Published var mode: ContentPatternMode = .literal {
         didSet { invalidateResult("匹配方式已改变，请重新查询。") }
@@ -17,94 +17,43 @@ final class ContentSearchState: ObservableObject {
     @Published var configuration = SearchConfiguration(query: "") {
         didSet { invalidateResult("范围或属性筛选已改变，请重新查询。") }
     }
-    @Published private(set) var response: ContentSearchResponse?
-    @Published private(set) var busy = false
-    @Published private(set) var message = "普通文本按字面匹配；上游 smart case，含大写时区分大小写。"
-    @Published private(set) var canLoadMore = false
-    private let service: FsearchService?
-    private var generation = 0
-    private var currentRequest: ContentSearchRequest?
+    let controller: ContentSearchController
+    var resultLimit = 100
+    private var observation: AnyCancellable?
 
-    init(service: FsearchService?) { self.service = service }
+    var response: ContentSearchResponse? { controller.response }
+    var files: [ContentFile] { controller.files }
+    var busy: Bool { controller.busy }
+    var message: String { controller.message }
+    var canLoadMore: Bool { controller.canLoadMore }
+    var displayedOccurrences: Int { controller.displayedOccurrences }
+
+    init(service: FsearchService?) {
+        controller = ContentSearchController { request in
+            guard let service else { throw FsearchError.query("引擎尚不可用。") }
+            return try await service.grep(request)
+        }
+        observation = controller.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
 
     func search() async {
-        generation += 1
-        let request = generation
-        response = nil
-        busy = true
-        message = "文本查询中…"
-        do {
-            guard let service else { throw FsearchError.query("引擎尚不可用。") }
-            let searchRequest = ContentSearchRequest(
-                pattern: pattern,
-                mode: mode,
-                caseMode: caseMode,
-                scopePath: configuration.scope.path,
-                showsHidden: configuration.showsHidden,
-                filters: configuration.filters
-            )
-            currentRequest = searchRequest
-            let result = try await service.grep(searchRequest)
-            guard request == generation else { return }
-            response = result
-            canLoadMore = result.next != nil
-            message = "\(result.files.count) 个文件 · 已显示 \(result.displayedOccurrences) 处匹配 · "
-                + (result.indexed ? "内容索引候选" : "直接读取候选")
-                + " · 已读取 \(result.read)/\(result.candidates) 候选"
-                + (result.next != nil
-                    ? " · 未完成：可继续"
-                    : result.complete
-                        ? " · 本次候选处理完成"
-                        : " · 未完成：上游未提供续查位置")
-        } catch {
-            guard request == generation else { return }
-            message = "文本查询失败：\(error.localizedDescription)"
-            canLoadMore = false
-        }
-        busy = false
+        await controller.search(ContentSearchRequest(
+            pattern: pattern,
+            mode: mode,
+            caseMode: caseMode,
+            limit: resultLimit,
+            scopePath: configuration.scope.path,
+            showsHidden: configuration.showsHidden,
+            filters: configuration.filters
+        ))
     }
 
-    func loadMore() async {
-        guard let service, let currentRequest, let cursor = response?.next, !busy else { return }
-        generation += 1
-        let request = generation
-        busy = true
-        message = "继续文本查询中…"
-        do {
-            let result = try await service.grep(currentRequest.continuing(at: cursor))
-            guard request == generation else { return }
-            let existing = Set(response?.files.map(\.path) ?? [])
-            let newFiles = result.files.filter { !existing.contains($0.path) }
-            response = ContentSearchResponse(
-                requestID: result.requestID,
-                files: (response?.files ?? []) + newFiles,
-                candidates: result.candidates,
-                read: result.read,
-                complete: result.complete,
-                next: result.next,
-                indexed: result.indexed,
-                error: result.error
-            )
-            canLoadMore = result.next != nil
-            message = "\(response?.files.count ?? 0) 个文件 · 已显示 \(response?.displayedOccurrences ?? 0) 处匹配 · "
-                + (result.indexed ? "内容索引候选" : "直接读取候选")
-                + (result.next != nil
-                    ? " · 未完成：可继续"
-                    : result.complete ? " · 本次候选处理完成" : " · 未完成：上游未提供续查位置")
-        } catch {
-            guard request == generation else { return }
-            message = "继续文本查询失败：\(error.localizedDescription)"
-        }
-        busy = false
-    }
+    func loadMore() async { await controller.loadMore() }
 
     private func invalidateResult(_ message: String) {
-        generation += 1
-        response = nil
-        currentRequest = nil
-        canLoadMore = false
-        busy = false
-        self.message = message
+        controller.invalidate(message: message)
     }
 }
 
@@ -141,7 +90,7 @@ struct ContentSearchView: View {
             }
             Text(state.message).font(.caption).textSelection(.enabled)
             List(selection: $selection) {
-                ForEach(state.response?.files ?? []) { file in
+                ForEach(state.files) { file in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(file.path).font(.headline).textSelection(.enabled)
                         ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in

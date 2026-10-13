@@ -792,12 +792,69 @@ final class SearchModel: ObservableObject {
             contentSearch.pattern = "银河😀"
             for _ in 0..<200 {
                 await contentSearch.search()
-                if contentSearch.response?.files.count == 1 { break }
+                if contentSearch.files.count == 1 { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            guard let response = contentSearch.response, let file = response.files.first,
+            guard let response = contentSearch.response, let file = contentSearch.files.first,
                   file.lines.map(\.text) == ["银河😀 first", "银河😀 second"],
                   response.displayedOccurrences == 2 else { throw FsearchError.bridge("Native content grouping failed") }
+            let highlighted = file.lines[0].nativeRanges
+                .map { String(file.lines[0].text[$0]) }
+                .joined()
+            try require(highlighted == "银河😀", "Native Unicode highlight range failed")
+
+            let options = workspace.appendingPathComponent("fixtures/options")
+            contentSearch.mode = .literal
+            contentSearch.configuration.scope = .folder(options.path)
+            contentSearch.pattern = "a.b"
+            await contentSearch.search()
+            try require(contentSearch.files.map(\.path) == [
+                options.appendingPathComponent("literal.txt").path
+            ], "Native literal content option failed")
+
+            contentSearch.mode = .regex
+            contentSearch.pattern = "a[.]b|axb"
+            await contentSearch.search()
+            try require(Set(contentSearch.files.map(\.path)) == Set([
+                options.appendingPathComponent("literal.txt").path,
+                options.appendingPathComponent("regex.txt").path
+            ]), "Native regex content option failed")
+
+            contentSearch.mode = .literal
+            contentSearch.caseMode = .sensitive
+            contentSearch.pattern = "ALPHA"
+            await contentSearch.search()
+            let casePath = options.appendingPathComponent("case.txt").path
+            try require(!contentSearch.files.contains { $0.path == casePath },
+                        "Native sensitive case failed")
+
+            let pagination = workspace.appendingPathComponent("fixtures/pagination")
+            contentSearch.caseMode = .smart
+            contentSearch.configuration.scope = .folder(pagination.path)
+            contentSearch.resultLimit = 1
+            contentSearch.pattern = "cursor-match"
+            await contentSearch.search()
+            guard let firstPageCount = contentSearch.response?.files.count,
+                  firstPageCount == 1, contentSearch.canLoadMore else {
+                throw FsearchError.bridge("Native content cursor did not produce a page")
+            }
+            await contentSearch.loadMore()
+            let paginationPaths = contentSearch.files.map(\.path)
+            try require(paginationPaths.count == 2 && Set(paginationPaths).count == 2,
+                        "Native content cursor repeated or skipped a page")
+            contentSearch.resultLimit = 100
+
+            contentSearch.mode = .regex
+            contentSearch.pattern = "["
+            await contentSearch.search()
+            try require(contentSearch.pattern == "[" && contentSearch.message.contains("失败"),
+                        "Invalid native regex did not preserve its input")
+            contentSearch.mode = .literal
+            contentSearch.configuration.scope = .allIndexed
+            contentSearch.pattern = "Alpha"
+            await contentSearch.search()
+            try require(!contentSearch.files.isEmpty, "Invalid native regex did not recover")
+
             guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
                 throw FsearchError.bridge("Content window unavailable")
             }
@@ -819,11 +876,11 @@ final class SearchModel: ObservableObject {
             try require(!String(contentsOf: diagnostic, encoding: .utf8).contains("银河"), "Content leaked into diagnostics")
             contentSearch.pattern = "absent-content-pattern"
             await contentSearch.search()
-            try require(contentSearch.response?.files.isEmpty == true, "Native no-match failed")
+            try require(contentSearch.files.isEmpty, "Native no-match failed")
             showsContentSearch = false
             for _ in 0..<100 where window.attachedSheet != nil { try await Task.sleep(for: .milliseconds(20)) }
             try require(window.attachedSheet == nil, "Content sheet did not close")
-            print("Native content grouping, Unicode/CRLF, open, Quick Look, no-match and diagnostic exclusion: passed")
+            print("Native content grouping/options/cursor/highlight, CRLF, open, Quick Look, no-match and diagnostic exclusion: passed")
             NSApplication.shared.terminate(nil)
         } catch {
             fputs("Native content smoke failed: \(error.localizedDescription)\n", stderr)
