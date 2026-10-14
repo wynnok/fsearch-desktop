@@ -38,7 +38,9 @@ final class PermissionStatusModel: ObservableObject {
         defer { isChecking = false }
         do {
             apply(try await load())
-            recheckMessage = "已重新读取引擎状态；若刚修改系统授权，请退出并重启应用以重新评估覆盖。"
+            recheckMessage = needsRestart
+                ? "已识别授权变化，请退出并重新打开 FsearchDesktop，让索引按新权限扫描。"
+                : "已重新检查完全磁盘访问权限和索引状态。"
         } catch {
             recordFailure(error)
         }
@@ -50,20 +52,32 @@ final class PermissionStatusModel: ObservableObject {
     }
 
     var contentMessage: String {
-        guard let status else { return "默认在后台建立受支持文本的内容索引；当前界面仅搜索名称。" }
+        guard let status else { return "正在获取文本内容索引状态。" }
+        if status.mode != "engine" { return "样本模式不提供文本内容搜索。" }
         if let pending = status.contentPending, pending > 0 {
-            return "内容索引后台处理中（待处理 \(pending) 项）；当前界面仅搜索名称。"
+            return "文本内容索引后台处理中（待处理 \(pending) 项）；可通过“文本内容搜索”查询。"
         }
         if status.contentPending == 0 {
-            return "内容队列暂无待处理项；不代表所有文件正文均可搜索。"
+            return "已索引 \(status.contentDocs ?? 0) 个文本文件；可通过“文本内容搜索”查询。"
         }
         return "内容索引状态未验证；默认在后台处理受支持文本。"
+    }
+
+    var needsRestart: Bool {
+        guard let current = status?.fullDiskAccess, let startup = status?.fullDiskAccessAtStartup else { return false }
+        return current != startup
     }
 
     var coverageMessage: String {
         guard let status else { return "索引覆盖尚未验证" }
         if status.mode != "engine" { return "仅覆盖指定样本目录，真实权限覆盖未验证。" }
+        if needsRestart { return "已识别完全磁盘访问授权变化；请退出并重新打开应用以更新索引覆盖。" }
         if status.fullDiskAccess == false { return "索引覆盖受限：部分受保护位置可能未收录。" }
+        if status.fullDiskAccess == true {
+            return status.ready
+                ? "完全磁盘访问已授权；名称索引就绪，可搜索已收录文件。"
+                : "完全磁盘访问已授权；正在建立全盘名称索引。"
+        }
         return "索引覆盖未验证：名称就绪和引擎权限信号不能证明所有位置可读。"
     }
 

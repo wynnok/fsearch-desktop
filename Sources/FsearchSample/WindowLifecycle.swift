@@ -43,7 +43,7 @@ struct ApplicationCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("关于 Fsearch Desktop…", action: showUpdates)
+            Button("关于 FsearchDesktop…", action: showUpdates)
             Button("检查更新…", action: showUpdates)
         }
         CommandGroup(after: .windowArrangement) {

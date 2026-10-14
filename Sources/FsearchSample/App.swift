@@ -130,6 +130,7 @@ final class SearchModel: ObservableObject {
     private var engineSmokeStarted = false
     private var contentWorkspace = false
     private var contentSmokeRequested = false
+    private var desktopSmokeWorkspace: URL?
     private(set) var isPermissionProbeMode = false
     private var permissionProbeArguments: PermissionProbeArguments?
     private var permissionProbeStarted = false
@@ -139,17 +140,13 @@ final class SearchModel: ObservableObject {
         let isValidation = arguments.contains("--smoke") || arguments.contains("--engine-smoke")
             || arguments.contains("--permission-probe") || arguments.contains("--content-smoke")
             || arguments.contains("--content-workspace")
+            || arguments.contains("--desktop-smoke")
         preferencesStore = isValidation ? nil : (preferences ?? LocalPreferences.applicationStore)
         restoringPreferences = true
         preferencesStore?.restore(configuration: &configuration, selection: selectionState)
         restoringPreferences = false
         preferenceObservation = selectionState.$isInspectorVisible.dropFirst().sink { [weak self] visible in
             self?.persistPreferences(inspectorVisible: visible)
-        }
-        let bundledSample = Bundle.main.resourceURL?.appendingPathComponent("sample", isDirectory: true)
-        guard arguments.count >= 2 || bundledSample.map({ FileManager.default.fileExists(atPath: $0.path) }) == true else {
-            localMessage = "请使用 bash scripts/dev.sh run 指定项目内受控样本。"
-            return
         }
         do {
             if arguments.count == 3, ["--content-smoke", "--content-workspace"].contains(arguments[1]) {
@@ -183,7 +180,22 @@ final class SearchModel: ObservableObject {
                 connectController()
                 return
             }
-            var directory = arguments.count >= 2 ? URL(fileURLWithPath: arguments[1]) : bundledSample!
+            if arguments.count == 3, arguments[1] == "--desktop-smoke" {
+                desktopSmokeWorkspace = URL(fileURLWithPath: arguments[2]).resolvingSymlinksInPath()
+            }
+            let startup = ApplicationStartup(
+                arguments: desktopSmokeWorkspace == nil ? arguments : Array(arguments.prefix(1)),
+                applicationSupport: desktopSmokeWorkspace ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
+                home: FileManager.default.homeDirectoryForCurrentUser
+            )
+            if case .desktop(let index, let home) = startup {
+                isEngineMode = true
+                configuration.query = ""
+                service = try FsearchService(desktopIndexDirectory: index, homeDirectory: home)
+                connectController()
+                return
+            }
+            guard case .sample(var directory) = startup else { return }
             if arguments.count == 4, arguments[2] == "--smoke" {
                 let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
                 directory = try NativeSmokeFixtures.create(under: output)
@@ -192,7 +204,7 @@ final class SearchModel: ObservableObject {
             service = try FsearchService(sampleDirectory: directory)
             connectController()
         } catch {
-            localMessage = "样本初始化失败：\(error.localizedDescription)"
+            localMessage = "搜索服务初始化失败：\(error.localizedDescription)"
             lastServiceError = error
             permissionStatus.recordFailure(error)
         }
@@ -419,6 +431,12 @@ final class SearchModel: ObservableObject {
 
     // Opt-in smoke uses the same actions and real window, with project-local files.
     func runSmokeIfRequested() async {
+        if let workspace = desktopSmokeWorkspace {
+            guard !engineSmokeStarted else { return }
+            engineSmokeStarted = true
+            Task { await runDesktopSmoke(workspace: workspace) }
+            return
+        }
         if contentWorkspace {
             if contentSmokeRequested && !engineSmokeStarted {
                 engineSmokeStarted = true
@@ -433,6 +451,7 @@ final class SearchModel: ObservableObject {
             return
         }
         if isEngineMode {
+            guard engineWorkspace != nil else { return }
             guard !engineSmokeStarted else { return }
             engineSmokeStarted = true
             // Keep validation alive when closing the view cancels its .task.
@@ -507,7 +526,7 @@ final class SearchModel: ObservableObject {
             await search()
             loadMore()
             loadMore()
-            try require(filenames == ["demo20.txt", "demo10.txt", "demo3.txt", "demo2.txt", "demo1.txt"], "Native descending order failed")
+            try require(filenames == ["demo20.txt", "demo10.txt", "demo3.txt", "demo2.txt", "demo1.txt"], "Native descending order failed: \(filenames)")
             try await capture("descending", under: output)
             await search(maximumResults: 2)
             try require(snapshot?.isComplete == false && snapshot?.totalCount == nil && message.hasPrefix("部分结果"),
@@ -586,6 +605,62 @@ final class SearchModel: ObservableObject {
         } catch {
             try? cleanupSmokeFixtures()
             fputs("Native smoke failed: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+
+    private func runDesktopSmoke(workspace: URL) async {
+        do {
+            guard canSearchContent, let service else { throw FsearchError.bridge("Desktop content search disabled") }
+            let fixture = workspace.appendingPathComponent("fixtures")
+            let path = fixture.appendingPathComponent("desktop-proof.txt").path
+            configuration.scope = .folder(fixture.path)
+            query = "desktop-proof"
+            for _ in 0..<600 {
+                await search()
+                if results.contains(where: { $0.path == path }) { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try require(results.map(\.path) == [path], "Desktop name search did not find fixture")
+            contentSearch.configuration.scope = .folder(fixture.path)
+            contentSearch.pattern = "desktop-content-proof"
+            await contentSearch.search()
+            try require(contentSearch.files.map(\.path) == [path], "Desktop text content search did not find fixture")
+            // Change delivery must work on the unconfined desktop entry, too.
+            for _ in 0..<600 {
+                if try await service.status().ready { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try require(try await service.status().ready, "Desktop disk index did not become ready")
+            _ = try await service.changes()
+            let changesBeforeAddition = observedChangeCount
+            let added = fixture.appendingPathComponent("desktop-added.txt")
+            try Data("desktop-content-added".utf8).write(to: added)
+            var delivered = false
+            for _ in 0..<200 {
+                let changes = try await service.changes()
+                if observedChangeCount > changesBeforeAddition || changes.contains(where: { $0.path.hasPrefix(fixture.path) }) {
+                    delivered = true
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try require(delivered, "Desktop change notifications missing")
+            query = "desktop-added"
+            for _ in 0..<200 {
+                await search()
+                if results.contains(where: { $0.path == added.path }) { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            try require(results.map(\.path) == [added.path], "Desktop live name search did not update")
+            await permissionStatus.recheck { try await service.status() }
+            try require(permissionStatus.status?.mode == "engine", "Desktop permission status is still sample mode")
+            try JSONEncoder().encode(permissionStatus.status).write(to: workspace.appendingPathComponent("desktop-status.json"))
+            try await capture("desktop-search", under: workspace)
+            print("Desktop startup, name search, text content search, permission probe and live changes: passed")
+            NSApplication.shared.terminate(nil)
+        } catch {
+            fputs("Desktop smoke failed: \(error.localizedDescription)\n", stderr)
             exit(1)
         }
     }
@@ -1269,7 +1344,7 @@ struct FsearchSampleApp: App {
     @StateObject private var model = SearchModel()
 
     var body: some Scene {
-        Window("Fsearch", id: "main-search") {
+        Window("FsearchDesktop", id: "main-search") {
             SearchView(model: model, selectionState: model.selectionState)
                 .background(MainWindowAttachment())
                 .sheet(isPresented: $model.showsUpdates) {

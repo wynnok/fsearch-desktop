@@ -157,8 +157,9 @@ while IFS= read -r dependency; do
 done < <(otool -L "$EXECUTABLE" | awk '/^\t/ {print $1}')
 
 plutil -lint "$PLIST"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == dev.fsearch.desktop.development ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == dev.fsearch.desktop ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST")" == "$APP_NAME" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")" == "$APP_NAME" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PLIST")" == AppIcon ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")" == 13.0 ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :FsearchPackageStatus' "$PLIST")" == "$DEV_DMG_PACKAGE_STATUS" ]]
@@ -199,6 +200,7 @@ fi
 
 ditto "$APP" "$INSTALLED_APP"
 codesign --verify --deep --strict "$INSTALLED_APP"
+bash "$PROJECT_ROOT/scripts/desktop-validation.sh" "$INSTALLED_APP"
 [[ -d "$INSTALLED_SAMPLE" ]] || { echo "Installed application is missing its sample resource" >&2; exit 1; }
 
 HOST_ARCHITECTURE="$(uname -m)"
@@ -254,7 +256,7 @@ RUBY
     printf 'Install path: temporary copy from mounted DMG (system Applications was not modified)\n'
     printf 'Runtime host: %s %s\n' "$(sw_vers -productName)" "$(sw_vers -productVersion)"
     printf 'Runtime architecture evidence: %s\n' "$RUNTIME_CLASS"
-    printf 'Runtime smoke: launch, implemented query suite, and exit passed\n'
+    printf 'Runtime smoke: desktop Engine startup/name/content/permission probe/live changes, fixture query suite, and exit passed\n'
     printf 'Notarization: not performed; ad-hoc development signature only\n'
     printf 'T06 Intel Mac and macOS 13 hardware gates: not evaluated\n'
 } > "$REPORT"

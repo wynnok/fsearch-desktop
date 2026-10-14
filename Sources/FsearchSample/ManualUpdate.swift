@@ -95,7 +95,7 @@ struct UpdateView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Fsearch Desktop \(state.currentVersion)").font(.headline)
+            Text("FsearchDesktop \(state.currentVersion)").font(.headline)
             Text("固定引擎：\(engineVersion)").textSelection(.enabled)
             Text(state.message)
             HStack {

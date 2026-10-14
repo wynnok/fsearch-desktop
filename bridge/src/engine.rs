@@ -1,4 +1,4 @@
-//! Opt-in validation Engine. Confinement is installed before any worker starts.
+//! Desktop Engine and explicit, process-confined validation entry points.
 use super::*;
 use fsearch::{Engine, Options};
 use std::path::Path;
@@ -374,21 +374,7 @@ pub unsafe extern "C" fn fsearch_real_engine_open(
     unsafe { *error = std::ptr::null_mut() };
     let result = contained(|| -> Result<EngineHandle, String> {
         let (data, home) = permission_index(unsafe { input(index)? })?;
-        if STARTED.swap(true, Ordering::SeqCst) {
-            return Err("Permission Engine requires one Engine per process".into());
-        }
-        // This entry intentionally keeps upstream's default FDA probe and name/content
-        // indexing. It never installs Seatbelt; isolation comes from the dedicated host.
-        let engine = Engine::start(Options {
-            dir: data,
-            home,
-            skip: None,
-        })?;
-        Ok(EngineHandle {
-            engine,
-            root: PathBuf::from("/"),
-            changes: Arc::new(Mutex::new(Vec::new())),
-        })
+        start_default_engine(data, home)
     });
     match result {
         Ok(Ok(handle)) => Box::into_raw(Box::new(handle)).cast(),
@@ -396,6 +382,90 @@ pub unsafe extern "C" fn fsearch_real_engine_open(
             let message = match failure {
                 Ok(Err(message)) => message,
                 _ => "Permission Engine initialization failed".into(),
+            };
+            unsafe { *error = owned_string(message) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+fn start_default_engine(data: PathBuf, home: String) -> Result<EngineHandle, String> {
+    if STARTED.swap(true, Ordering::SeqCst) {
+        return Err("Default Engine requires one Engine per process".into());
+    }
+    let engine = Engine::start(Options {
+        dir: data,
+        home,
+        skip: None,
+    })?;
+    let changes = Arc::new(Mutex::new(Vec::new()));
+    let queue = changes.clone();
+    engine.on_change(move |batch| {
+        let mut queue = queue.lock().unwrap();
+        for (path, recursive) in batch {
+            queue.push(Change {
+                path: String::from_utf8_lossy(path).into(),
+                recursive: *recursive,
+            });
+        }
+        if queue.len() > 1024 {
+            let excess = queue.len() - 1024;
+            queue.drain(..excess);
+        }
+    });
+    Ok(EngineHandle {
+        engine,
+        root: PathBuf::from("/"),
+        changes,
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fsearch_desktop_engine_open(
+    index: *const c_char,
+    home: *const c_char,
+    error: *mut *mut c_char,
+) -> *mut c_void {
+    if error.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe { *error = std::ptr::null_mut() };
+    let result = contained(|| -> Result<EngineHandle, String> {
+        let home = PathBuf::from(unsafe { input(home)? });
+        let data = PathBuf::from(unsafe { input(index)? });
+        if !home.is_absolute()
+            || home == Path::new("/")
+            || !home.is_dir()
+            || !data.is_absolute()
+            || data == Path::new("/")
+            || data == home
+            || data.starts_with(fsearch::default_dir(&home.to_string_lossy()))
+        {
+            return Err(
+                "Desktop Engine requires a real home and an independent absolute index".into(),
+            );
+        }
+        std::fs::create_dir_all(&data).map_err(|_| "Cannot create desktop index")?;
+        let data = data
+            .canonicalize()
+            .map_err(|_| "Cannot resolve desktop index")?;
+        let home = home
+            .canonicalize()
+            .map_err(|_| "Cannot resolve desktop home")?;
+        if data == Path::new("/")
+            || data == home
+            || data.starts_with(fsearch::default_dir(&home.to_string_lossy()))
+        {
+            return Err("Desktop index must be separate from HOME and the CLI index".into());
+        }
+        start_default_engine(data, home.to_string_lossy().into())
+    });
+    match result {
+        Ok(Ok(handle)) => Box::into_raw(Box::new(handle)).cast(),
+        failure => {
+            let message = match failure {
+                Ok(Err(message)) => message,
+                _ => "Desktop Engine initialization failed".into(),
             };
             unsafe { *error = owned_string(message) };
             std::ptr::null_mut()
@@ -419,6 +489,7 @@ struct EngineStatus {
     content_bytes: usize,
     content_pending: usize,
     full_disk_access: bool,
+    full_disk_access_at_startup: bool,
 }
 
 fn status(handle: &EngineHandle) -> EngineStatus {
@@ -436,7 +507,8 @@ fn status(handle: &EngineHandle) -> EngineStatus {
         content_segments: s.content_segments,
         content_bytes: s.content_bytes,
         content_pending: s.content_pending,
-        full_disk_access: s.full_disk_access,
+        full_disk_access: fsearch::has_full_disk_access(),
+        full_disk_access_at_startup: s.full_disk_access,
     }
 }
 

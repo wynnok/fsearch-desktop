@@ -4,7 +4,7 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
     source "$(dirname "${BASH_SOURCE[0]}")/build-environment.sh"
 fi
 
-DEV_DMG_APP_NAME="Fsearch Desktop Development"
+DEV_DMG_APP_NAME="FsearchDesktop"
 DEV_DMG_PACKAGE_STATUS="development-unnotarized"
 DEV_DMG_DEFAULT_VERSION="0.1.0"
 DEV_DMG_ROOT="$PROJECT_ROOT/.build/dev-dmg"

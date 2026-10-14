@@ -1,4 +1,4 @@
-# Fsearch Desktop
+# FsearchDesktop
 
 一款把「找文件」这件事做快的 macOS 原生文件搜索应用。
 
@@ -7,7 +7,7 @@
 ![Fsearch Desktop 主窗口：文件名搜索、结果列表与检查器](docs/images/main-window.png)
 
 > **当前版本：v0.1.0-unsigned.2，未签名预发布版。**
-> [Releases](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.0-unsigned.2) 提供独立的 Apple Silicon、Intel 和 Universal DMG；macOS 首次启动可能阻止运行，需要按说明手动放行。正式签名版尚未发布。默认包处于**样本验证模式**，只搜索内置的受控样本，不会索引你的个人磁盘。未验证项见[支持状态与已知限制](docs/product/support-status.md)。
+> [Releases](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.0-unsigned.2) 提供独立的 Apple Silicon、Intel 和 Universal DMG；macOS 首次启动可能阻止运行，需要按说明手动放行。正式签名版尚未发布。该旧版默认处于样本验证模式。当前源码构建的 FsearchDesktop 已默认使用真实磁盘引擎，启用文件名与文本内容搜索；修复尚未发布到该 Release。未验证项见[支持状态与已知限制](docs/product/support-status.md)。
 
 ## 主要功能
 
@@ -18,7 +18,7 @@
 | 结果浏览 | 按名称、索引大小、修改时间全局排序（部分结果只保证已载入顺序），支持分页载入与隐藏项开关 |
 | 检查器 | 显示路径、类型、索引大小与实际大小、创建与修改时间，可随时隐藏 |
 | 快捷操作 | Quick Look 预览、打开文件、在 Finder 中显示、复制路径、面包屑跳转上级目录 |
-| 文本内容搜索（受控验证） | 在受控真实 Engine 模式下按普通文本或正则搜索文件正文，并高亮匹配行；默认样本模式下入口禁用 |
+| 文本内容搜索 | 正常安装包中可按普通文本或正则搜索文件正文，并高亮匹配行 |
 | 本地优先 | 无账号、无远程同步；查询历史默认不保存，诊断报告由你主动导出 |
 
 ## 快速开始
@@ -77,13 +77,13 @@ bash scripts/package-dev-dmg.sh  # 打包开发 DMG
 
 ### 文本内容搜索
 
-正文搜索需要明确启动受控的真实 Engine 才可用，默认样本名称模式下入口保持禁用。它只搜索上游已准入的文本文件，**不解析 PDF/Office/OCR 与压缩包**，也不会为搜索主动下载 iCloud 中尚未下载的内容。
+当前源码构建的安装包默认启用真实引擎和文本内容搜索。通过工具栏或菜单打开“文本内容搜索”。`dev.sh run` 仍显式使用受控样本；该开发模式不提供正文搜索。它只搜索上游已准入的文本文件，**不解析 PDF/Office/OCR 与压缩包**，也不会为搜索主动下载 iCloud 中尚未下载的内容。
 
 ![文本内容搜索：匹配文件、行号与高亮片段](docs/images/content-search.png)
 
 ## 已知限制
 
-- 默认开发包只搜索受控样本，不能用它判断真实磁盘的覆盖范围、性能或完全磁盘访问权限是否生效。
+- 当前源码构建的应用默认索引真实磁盘。授予当前 FsearchDesktop.app 完全磁盘访问后，重新检查；若提示授权变化，退出并重新打开应用。未签名包更换后可能需要重新授权。
 - 支持目标为 macOS 13+、Apple Silicon 与 Intel，但 Intel 与 macOS 13 实机尚未验证。
 - 外接盘与网络卷不在首版默认覆盖范围内；索引大小可能存在精度差异，目录大小不做递归汇总。
 - 应用当前不提供移动、删除、重命名等文件管理操作。

@@ -32,8 +32,8 @@ esac
 
 BUILD_COMMIT="$(git rev-parse HEAD)"
 BUILD_SHORT_COMMIT="$(git rev-parse --short=12 HEAD)"
-VARIANT_APP_NAME="$DEV_DMG_APP_NAME $ARCH_LABEL"
-VARIANT_DMG_NAME="${DEV_DMG_ARTIFACT_PREFIX}-${APP_VERSION}-dev-${BUILD_SHORT_COMMIT}-${ARCHITECTURE}.dmg"
+VARIANT_APP_NAME="$DEV_DMG_APP_NAME"
+VARIANT_DMG_NAME="${DEV_DMG_ARTIFACT_PREFIX}-${APP_VERSION}-unsigned-${BUILD_SHORT_COMMIT}-${ARCHITECTURE}.dmg"
 VARIANT_DIR="$DEV_DMG_ROOT/arch-$ARCHITECTURE"
 VARIANT_APP="$VARIANT_DIR/$VARIANT_APP_NAME.app"
 VARIANT_ROOT="$VARIANT_DIR/dmg-root"
@@ -78,7 +78,7 @@ set_plist_string() {
     fi
 }
 
-set_plist_string CFBundleIdentifier "dev.fsearch.desktop.development.$ARCHITECTURE"
+set_plist_string CFBundleIdentifier "dev.fsearch.desktop"
 set_plist_string CFBundleName "$VARIANT_APP_NAME"
 set_plist_string CFBundleDisplayName "$VARIANT_APP_NAME"
 set_plist_string CFBundleShortVersionString "$APP_VERSION"
@@ -119,15 +119,14 @@ awk -v arch="$ARCHITECTURE" '
 cp "$VARIANT_ROOT/BUILD-MANIFEST.txt" "$VARIANT_MANIFEST"
 
 cat > "$VARIANT_ROOT/DEVELOPMENT-README.txt" <<EOF
-Fsearch Desktop Development ($ARCH_LABEL)
+FsearchDesktop ($ARCH_LABEL)
 
-This is an unsigned, unnotarized development verification package.
+This is a full desktop application build without Developer ID signing or notarization.
 - Architecture: $ARCHITECTURE
 - This DMG contains only the $ARCHITECTURE application slice.
 - It is not Developer ID signed and not notarized.
 - The package was built from commit $BUILD_COMMIT.
-- Runtime smoke for this thinned variant was not run on this host.
-- Use the Universal DMG when you need the fully smoke-verified application bundle.
+- Runtime verification is recorded in the report alongside this DMG.
 
 Install by dragging "$VARIANT_APP_NAME.app" onto the Applications link in this disk image.
 The package does not run a CLI installer, change privacy settings, install global tools,
@@ -174,6 +173,12 @@ codesign --verify --deep --strict "$MOUNTED_APP"
 CODESIGN_DETAILS="$(codesign -dvvv "$MOUNTED_APP" 2>&1)"
 printf '%s\n' "$CODESIGN_DETAILS" | grep -q 'Signature=adhoc'
 
+RUNTIME_STATUS='not run on this host; native hardware evidence required'
+if [[ "$ARCHITECTURE" == "$(uname -m)" ]]; then
+    bash "$PROJECT_ROOT/scripts/desktop-validation.sh" "$MOUNTED_APP"
+    RUNTIME_STATUS='native desktop startup, name/content search, permission probe and live changes passed'
+fi
+
 {
     printf 'Architecture DMG verification: PASSED\n'
     printf 'DMG: %s\n' "$VARIANT_DMG_NAME"
@@ -182,7 +187,7 @@ printf '%s\n' "$CODESIGN_DETAILS" | grep -q 'Signature=adhoc'
     printf 'Build commit: %s\n' "$BUILD_COMMIT"
     printf 'SHA-256: %s\n' "$ACTUAL_HASH"
     printf 'Signature: ad-hoc only, not Developer ID signed, not notarized\n'
-    printf 'Runtime smoke: not run for this thinned variant\n'
+    printf 'Runtime smoke: %s\n' "$RUNTIME_STATUS"
     printf 'Static validation: DMG checksum, architecture slices, plist, and code signature passed\n'
 } > "$VARIANT_REPORT"
 

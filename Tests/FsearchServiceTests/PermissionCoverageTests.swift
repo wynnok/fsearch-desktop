@@ -4,6 +4,14 @@ import FsearchService
 import XCTest
 
 final class PermissionCoverageTests: XCTestCase {
+    func testDesktopEngineRejectsHomeAndCLIIndexWithoutValidationEnvironment() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for index in [URL(fileURLWithPath: "/"), home,
+                      home.appendingPathComponent("Library/Application Support/FSearch")] {
+            XCTAssertThrowsError(try FsearchService(desktopIndexDirectory: index, homeDirectory: home))
+        }
+    }
+
     func testDefaultEngineEntryRejectsNonDedicatedEnvironmentBeforeCreatingIndex() throws {
         let previousPermissionEnvironment = ProcessInfo.processInfo.environment["FSEARCH_PERMISSION_ENV"]
         let previousWorkspace = ProcessInfo.processInfo.environment["FSEARCH_PERMISSION_WORKSPACE"]

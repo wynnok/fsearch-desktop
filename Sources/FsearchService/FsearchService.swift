@@ -55,12 +55,14 @@ public struct ServiceStatus: Codable, Sendable, Equatable {
     public let contentBytes: Int?
     public let contentPending: Int?
     public let fullDiskAccess: Bool?
+    public let fullDiskAccessAtStartup: Bool?
 
     public init(mode: String, ready: Bool, engineValidated: Bool, upstreamVersion: String,
                 owner: Bool? = nil, entries: Int? = nil, dirs: Int? = nil,
                 indexBytes: Int? = nil, contentDocs: Int? = nil,
                 contentSegments: Int? = nil, contentBytes: Int? = nil,
-                contentPending: Int? = nil, fullDiskAccess: Bool? = nil) {
+                contentPending: Int? = nil, fullDiskAccess: Bool? = nil,
+                fullDiskAccessAtStartup: Bool? = nil) {
         self.mode = mode
         self.ready = ready
         self.engineValidated = engineValidated
@@ -74,6 +76,7 @@ public struct ServiceStatus: Codable, Sendable, Equatable {
         self.contentBytes = contentBytes
         self.contentPending = contentPending
         self.fullDiskAccess = fullDiskAccess
+        self.fullDiskAccessAtStartup = fullDiskAccessAtStartup
     }
 }
 
@@ -423,6 +426,22 @@ private final class SampleHandle: @unchecked Sendable {
         pointer = handle
     }
 
+    init(desktopIndexDirectory: URL, homeDirectory: URL) throws {
+        guard !desktopIndexDirectory.path.utf8.contains(0), !homeDirectory.path.utf8.contains(0) else {
+            throw FsearchError.initialization("Engine 路径包含 NUL")
+        }
+        isEngine = true
+        var error: UnsafeMutablePointer<CChar>?
+        let handle = desktopIndexDirectory.path.withCString { index in
+            homeDirectory.path.withCString { fsearch_desktop_engine_open(index, $0, &error) }
+        }
+        defer { if let error { fsearch_string_free(error) } }
+        guard let handle else {
+            throw FsearchError.initialization(error.map { String(cString: $0) } ?? "无法启动桌面搜索引擎")
+        }
+        pointer = handle
+    }
+
     deinit {
         if isEngine { fsearch_engine_close(pointer) } else { fsearch_sample_close(pointer) }
     }
@@ -483,6 +502,11 @@ public actor FsearchService {
     // workspace. The Rust gate rejects ordinary development processes.
     public init(realEngineIndexDirectory: URL) throws {
         handle = try SampleHandle(realEngineIndexDirectory: realEngineIndexDirectory)
+        sampleDirectory = nil
+    }
+
+    public init(desktopIndexDirectory: URL, homeDirectory: URL) throws {
+        handle = try SampleHandle(desktopIndexDirectory: desktopIndexDirectory, homeDirectory: homeDirectory)
         sampleDirectory = nil
     }
 

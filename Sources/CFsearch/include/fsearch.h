@@ -34,4 +34,8 @@ void fsearch_engine_close(void *handle);
 // install Seatbelt, and still allows one Engine per process.
 void *fsearch_real_engine_open(const char *index, char **error);
 
+// Normal desktop application: independent index, real user home, default disk
+// scan and content indexing. No validation confinement or environment gate.
+void *fsearch_desktop_engine_open(const char *index, const char *home, char **error);
+
 #endif

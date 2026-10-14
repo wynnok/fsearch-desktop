@@ -22,7 +22,7 @@ else
 fi
 
 APP_NAME="$DEV_DMG_APP_NAME"
-DMG_NAME="${DEV_DMG_ARTIFACT_PREFIX}-${APP_VERSION}-dev-${BUILD_SHORT_COMMIT}-universal.dmg"
+DMG_NAME="${DEV_DMG_ARTIFACT_PREFIX}-${APP_VERSION}-unsigned-${BUILD_SHORT_COMMIT}-universal.dmg"
 OUTPUT_DIR="$DEV_DMG_OUTPUT_DIR"
 PACKAGE_DIR="$DEV_DMG_ROOT/package"
 STAGING_APP="$PACKAGE_DIR/$APP_NAME.app"
@@ -83,7 +83,7 @@ bash "$PROJECT_ROOT/scripts/generate-third-party-notices.sh" "$NOTICES"
 ditto "$ARM_APP" "$STAGING_APP"
 lipo -create "$ARM_EXECUTABLE" "$X86_EXECUTABLE" -output "$STAGED_EXECUTABLE"
 
-set_plist_string CFBundleIdentifier dev.fsearch.desktop.development
+set_plist_string CFBundleIdentifier dev.fsearch.desktop
 set_plist_string CFBundleName "$APP_NAME"
 set_plist_string CFBundleDisplayName "$APP_NAME"
 set_plist_string CFBundleIconFile AppIcon
@@ -103,21 +103,23 @@ cp "$PROJECT_ROOT/.build/artifacts/arm64/release/build-record.txt" "$STAGED_RESO
 cp "$PROJECT_ROOT/.build/artifacts/x86_64/release/build-record.txt" "$STAGED_RESOURCES/BUILD-RECORD-x86_64.txt"
 
 cat > "$DEVELOPMENT_README" <<EOF
-Fsearch Desktop Development
+FsearchDesktop
 
-This is a development verification package, not a stable release.
+This is a full desktop application build without Developer ID signing or notarization.
 - Not notarized and not Developer ID signed.
 - The application and embedded Fsearch engine contain arm64 and x86_64 slices.
 - The package was built from commit $BUILD_COMMIT.
 - Intel Mac and macOS 13 runtime evidence is not implied unless the generated verification report records it.
 
 Install by dragging "$APP_NAME.app" onto the Applications link in this disk image.
-Use a disposable test account or machine. This package does not run a CLI installer,
+Normal launch indexes readable files on your disks and enables text content search.
+Grant Full Disk Access to this installed FsearchDesktop.app, then restart when prompted.
+This package does not run a CLI installer,
 change privacy settings, install global tools, or publish a stable release.
 EOF
 
 cat > "$MANIFEST" <<EOF
-Fsearch Desktop Development Package
+FsearchDesktop Package
 Package status: $DEV_DMG_PACKAGE_STATUS
 Release channel: development verification artifact only
 Application version: $APP_VERSION

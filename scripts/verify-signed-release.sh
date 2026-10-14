@@ -32,7 +32,7 @@ spctl --assess --type open --context context:primary-signature "$DMG"
 mkdir -p "$WORK/mount" "$WORK/Applications" "$WORK/smoke"
 hdiutil attach -readonly -nobrowse -mountpoint "$WORK/mount" "$DMG" >/dev/null
 MOUNTED=1
-APP="$WORK/mount/Fsearch Desktop.app"
+APP="$WORK/mount/FsearchDesktop.app"
 PLIST="$APP/Contents/Info.plist"
 [[ "$(plutil -extract CFBundleIdentifier raw -o - "$PLIST")" == dev.fsearch.desktop ]]
 [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" == "$VERSION" ]]
@@ -56,11 +56,12 @@ printf '%s\n' "$DETAILS" | grep -q '^Authority=Developer ID Application:'
 printf '%s\n' "$DETAILS" | grep -q 'flags=.*runtime'
 xcrun stapler validate "$APP"
 spctl --assess --type execute "$APP"
-INSTALLED="$WORK/Applications/Fsearch Desktop.app"
+INSTALLED="$WORK/Applications/FsearchDesktop.app"
 ditto "$APP" "$INSTALLED"
 codesign --verify --deep --strict "$INSTALLED"
 xcrun stapler validate "$INSTALLED"
 spctl --assess --type execute "$INSTALLED"
+bash "$PROJECT_ROOT/scripts/desktop-validation.sh" "$INSTALLED"
 dev_dmg_run_smoke "$INSTALLED/Contents/MacOS/FsearchSample" "$INSTALLED/Contents/Resources/sample" "$WORK/smoke" "$WORK/smoke.log"
 grep -q 'Native search and file acceptance journeys: passed' "$WORK/smoke.log"
 hdiutil detach "$WORK/mount" >/dev/null

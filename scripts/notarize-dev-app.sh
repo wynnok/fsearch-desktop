@@ -77,11 +77,11 @@ exit(rows.any? { |row| row.include?('"Developer ID Application:') &&
   (row.include?('"' + identity + '"') || row.match?(/\b#{Regexp.escape(identity)}\b/) && identity.match?(/\A[0-9A-Fa-f]{40}\z/)) } ? 0 : 1)
 RUBY
 
-APP="$RUN/Fsearch Desktop Development.app"
+APP="$RUN/FsearchDesktop.app"
 if [[ -n "$RELEASE_VERSION" ]]; then
     [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid release version.'
     [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" == "$RELEASE_VERSION" ]] || fail 'Release version differs from the built application.'
-    APP="$RUN/Fsearch Desktop.app"
+    APP="$RUN/FsearchDesktop.app"
 fi
 run copy-application ditto "$INPUT_APP" "$APP"
 # Metadata is frozen before signing; this remains a development validation artifact.
@@ -91,8 +91,8 @@ if [[ -n "$RELEASE_VERSION" ]]; then
     run release-status plutil -replace FsearchPackageStatus -string release-candidate "$APP/Contents/Info.plist"
     run release-mode plutil -replace FsearchDevelopmentBuild -bool false "$APP/Contents/Info.plist"
     run release-identifier plutil -replace CFBundleIdentifier -string dev.fsearch.desktop "$APP/Contents/Info.plist"
-    run release-name plutil -replace CFBundleName -string 'Fsearch Desktop' "$APP/Contents/Info.plist"
-    run release-display-name plutil -replace CFBundleDisplayName -string 'Fsearch Desktop' "$APP/Contents/Info.plist"
+    run release-name plutil -replace CFBundleName -string 'FsearchDesktop' "$APP/Contents/Info.plist"
+    run release-display-name plutil -replace CFBundleDisplayName -string 'FsearchDesktop' "$APP/Contents/Info.plist"
 fi
 sign_code() {
     local stage="$1" target="$2" runtime="$3"

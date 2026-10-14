@@ -64,7 +64,7 @@ jobs:
           FSEARCH_NOTARY_KEY_ID: ${{ secrets.FSEARCH_NOTARY_KEY_ID }}
           FSEARCH_NOTARY_ISSUER: ${{ secrets.FSEARCH_NOTARY_ISSUER }}
           FSEARCH_SIGNING_IDENTITY: ${{ vars.FSEARCH_SIGNING_IDENTITY }}
-        run: bash scripts/sign-release-ci.sh '.build/dev-dmg/package/Fsearch Desktop Development.app' "$FSEARCH_DEV_VERSION"
+        run: bash scripts/sign-release-ci.sh '.build/dev-dmg/package/FsearchDesktop.app' "$FSEARCH_DEV_VERSION"
       - name: Prepare release notes and build records
         run: |
           set -euo pipefail
