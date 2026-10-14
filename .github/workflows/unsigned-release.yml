@@ -3,7 +3,7 @@ name: Unsigned pre-release
 on:
   push:
     tags:
-      - "v*-unsigned"
+      - "v*-unsigned*"
 
 permissions:
   contents: read
@@ -64,6 +64,11 @@ jobs:
       - name: Verify package and installed application
         run: bash scripts/verify-dev-dmg.sh --dmg .build/dev-dmg/output/*.dmg
 
+      - name: Package architecture-specific DMGs
+        run: |
+          bash scripts/package-arch-dmg.sh arm64
+          bash scripts/package-arch-dmg.sh x86_64
+
       - name: Verify unsigned release notes
         run: test -s "docs/releases/$RELEASE_TAG.md"
 
@@ -80,6 +85,6 @@ jobs:
             --notes-file "docs/releases/$RELEASE_TAG.md" \
             .build/dev-dmg/output/*.dmg \
             .build/dev-dmg/output/SHA256SUMS \
-            .build/dev-dmg/output/build-manifest.txt \
+            .build/dev-dmg/output/build-manifest*.txt \
             .build/dev-dmg/output/THIRD-PARTY-NOTICES.txt \
-            .build/dev-dmg/verification/verification-report.txt
+            .build/dev-dmg/verification/verification-report*.txt
