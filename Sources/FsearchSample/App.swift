@@ -29,6 +29,7 @@ final class SearchModel: ObservableObject {
     private var preferenceObservation: AnyCancellable?
     private var pollingTask: Task<Void, Never>?
     private var changesPending = false
+    private var pendingRenames: [String: String] = [:]
     private var validationMessage: String?
     private var lastServiceError: Error?
     @Published var configuration = SearchConfiguration() {
@@ -244,7 +245,18 @@ final class SearchModel: ObservableObject {
             await controller.refreshCurrentQuery()
             guard generation == searchGeneration, selection == selected,
                   selectionState.selectedPaths == selectedPaths else { return }
-            restoreSelection(selected, paths: selectedPaths)
+            var restoredPaths = selectedPaths
+            var restoredPrimary = selected
+            for (oldPath, newPath) in pendingRenames {
+                guard selectedPaths.contains(oldPath) else { pendingRenames[oldPath] = nil; continue }
+                let newVisible = (try? controller.ensureVisible(path: newPath)) == true
+                if !newVisible && (controller.phase == .partial || (try? controller.ensureVisible(path: oldPath)) == true) { continue }
+                restoredPaths.remove(oldPath)
+                restoredPaths.insert(newPath)
+                if selected == oldPath { restoredPrimary = newPath }
+                pendingRenames[oldPath] = nil
+            }
+            restoreSelection(restoredPrimary, paths: restoredPaths)
         } catch {
             lastServiceError = error
             permissionStatus.recordFailure(error)
@@ -289,6 +301,26 @@ final class SearchModel: ObservableObject {
 
     func submit() { Task { await search() } }
     func refresh() { Task { await search(refresh: !isEngineMode) } }
+
+    func fileDidChange(_ oldPath: String, _ newPath: String?) {
+        if selectionState.selectedPaths.contains(oldPath) {
+            if let newPath { pendingRenames[oldPath] = newPath }
+            else {
+                var paths = selectionState.selectedPaths
+                paths.remove(oldPath)
+                selectionState.select(paths: paths, primary: selection == oldPath ? nil : selection)
+            }
+        }
+        if !isEngineMode, let service {
+            Task {
+                do {
+                    try await service.refreshSample()
+                    changesPending = true
+                    await pollService()
+                } catch { applicationMessage = "文件已改变，但结果刷新失败，请重新查询。" }
+            }
+        }
+    }
 
     func search(
         refresh: Bool = false,
@@ -935,6 +967,19 @@ final class SearchModel: ObservableObject {
             try require(selection == nil && selectionMessage != nil,
                         "Deleted selection did not explain its disappearance")
             try await capture("engine-deleted-selection", under: output)
+            let original = workspace.appendingPathComponent("fixtures/engine-proof.txt")
+            let renamed = workspace.appendingPathComponent("fixtures/engine-renamed.txt")
+            selection = original.path
+            let fileActions = FileActionState()
+            fileActions.onFileMutation = fileDidChange
+            await fileActions.rename(path: original.path, to: renamed.lastPathComponent)
+            for _ in 0..<200 where selection != renamed.path { try await Task.sleep(for: .milliseconds(50)) }
+            try require(selection == renamed.path && filenames.contains("engine-renamed.txt"),
+                        "Native Engine rename lost selection before notifications were applied")
+            await fileActions.rename(path: renamed.path, to: original.lastPathComponent)
+            for _ in 0..<200 where selection != original.path { try await Task.sleep(for: .milliseconds(50)) }
+            try require(selection == original.path && filenames.contains("engine-proof.txt"), "Native Engine rename restore failed")
+            print("Native Engine file mutation selection: passed")
             try await service.saveIndex()
             try await Task.sleep(for: .seconds(2))
             print("Native Engine query, close, background update, notification, reopen, save and application exit: passed")

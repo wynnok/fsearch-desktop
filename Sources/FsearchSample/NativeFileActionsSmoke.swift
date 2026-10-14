@@ -35,6 +35,14 @@ enum NativeFileActionsSmoke {
             try await Task.sleep(for: .milliseconds(30))
         }
         var checks = ["enterOpenNativeTarget": actions.openedURL == first]
+        if let menu = table.menu {
+            menu.delegate?.menuNeedsUpdate?(menu)
+            let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+            checks["contextMenuRequestedActions"] = titles == ["打开“\(first.lastPathComponent)”", "打开方式", "在 Finder 中显示",
+                "显示简介", "快速查看", "重命名…", "复制路径", "移到废纸篓", "永久删除…"]
+            checks["contextMenuIcons"] = menu.items.filter { !$0.isSeparatorItem }.allSatisfy { $0.image != nil }
+            checks["openWithListsApplications"] = menu.items.first(where: { $0.title == "打开方式" })?.submenu?.items.isEmpty == false
+        }
         if let doubleAction = table.doubleAction {
             NSApplication.shared.sendAction(doubleAction, to: table.target, from: table)
             for _ in 0..<100 where actions.openedURL == nil && actions.message == nil {
@@ -42,15 +50,19 @@ enum NativeFileActionsSmoke {
             }
         }
         checks["doubleClickNativeTarget"] = actions.openedURL == first
-        if let copyItem = table.menu?.items.first(where: { $0.title == "复制完整路径" }), let action = copyItem.action {
+        if let copyItem = table.menu?.items.first(where: { $0.title == "复制路径" }), let action = copyItem.action {
             NSApplication.shared.sendAction(action, to: copyItem.target, from: copyItem)
         }
         checks["contextCopyFullPath"] = NSPasteboard.general.string(forType: .string) == firstPath
-        if let revealItem = table.menu?.items.first(where: { $0.title == "在 Finder 显示所选项目" }), let action = revealItem.action {
+        if let revealItem = table.menu?.items.first(where: { $0.title == "在 Finder 中显示" }), let action = revealItem.action {
             NSApplication.shared.sendAction(action, to: revealItem.target, from: revealItem)
         }
         // Confirms the native request; Finder's visible selection needs separate UI observation.
         checks["finderNativeRequestTarget"] = actions.revealedURL == first
+        if ProcessInfo.processInfo.environment["FSEARCH_VERIFY_FINDER_INFO"] == "1" {
+            actions.showInfo(path: first.path)
+            checks["finderInformationWindowRequest"] = actions.message == nil
+        }
         let folder = first.deletingLastPathComponent()
         func folderElement(in element: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
             if element.accessibilityURL()?.path == folder.path
@@ -92,6 +104,23 @@ enum NativeFileActionsSmoke {
             _ = actions.previewPanel(panel, handle: try event(53, "\u{1b}"))
             for _ in 0..<50 where panel.isVisible { try await Task.sleep(for: .milliseconds(20)) }
             checks["escapeClosesPreview"] = !panel.isVisible && actions.previewURL == nil
+        }
+        if let deleteItem = table.menu?.items.first(where: { $0.title == "永久删除…" }), let action = deleteItem.action {
+            // The menu still represents the first item, even though selection moved to the second.
+            NSApplication.shared.sendAction(action, to: deleteItem.target, from: deleteItem)
+            for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
+            guard let sheet = window.attachedSheet, let cancel = sheet.defaultButtonCell?.controlView as? NSButton else {
+                throw FsearchError.bridge("永久删除确认窗口未出现或没有默认取消按钮")
+            }
+            checks["permanentDeleteDefaultsToCancel"] = cancel.title == "取消"
+            func containsTargetName(_ view: NSView) -> Bool {
+                if let text = view as? NSTextField, text.stringValue.contains(first.lastPathComponent) { return true }
+                return view.subviews.contains { containsTargetName($0) }
+            }
+            checks["permanentDeleteKeepsOriginalMenuTarget"] = sheet.contentView.map(containsTargetName) == true
+            cancel.performClick(nil)
+            for _ in 0..<100 where window.attachedSheet != nil || actions.isMutating { try await Task.sleep(for: .milliseconds(20)) }
+            checks["permanentDeleteCancelPreservesFile"] = FileManager.default.fileExists(atPath: first.path)
         }
         if let scroll = table.enclosingScrollView {
             // Large native rows make scrolling observable with the small controlled fixture.

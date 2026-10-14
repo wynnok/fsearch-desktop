@@ -63,6 +63,7 @@ case "$ACTION" in
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>在你选择“显示简介”时，请求 Finder 展示所选项目的原生简介窗口。</string>
 </dict></plist>
 PLIST
         # Local test bundle only; distribution signing and notarization are separate.

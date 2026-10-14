@@ -98,6 +98,7 @@ sign_code() {
     local stage="$1" target="$2" runtime="$3"
     set -- --force --sign "$FSEARCH_SIGNING_IDENTITY" --timestamp
     if [[ "$runtime" == runtime ]]; then set -- "$@" --options runtime; fi
+    if [[ "$stage" == sign-application ]]; then set -- "$@" --entitlements "$PROJECT_ROOT/Resources/Fsearch.entitlements"; fi
     if [[ -n "${FSEARCH_SIGNING_KEYCHAIN:-}" ]]; then set -- "$@" --keychain "$FSEARCH_SIGNING_KEYCHAIN"; fi
     run "$stage" codesign "$@" "$target"
 }
