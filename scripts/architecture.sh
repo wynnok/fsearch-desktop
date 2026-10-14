@@ -49,6 +49,7 @@ case "$ACTION" in
         BIN_PATH="$(swift build "${SWIFT_OPTIONS[@]}" --show-bin-path)"
         cp "$BIN_PATH/FsearchSample" "$EXECUTABLE"
         ditto "$PROJECT_ROOT/fixtures/sample" "$APP/Contents/Resources/sample"
+        cp "$PROJECT_ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
         cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -56,6 +57,7 @@ case "$ACTION" in
 <key>CFBundleExecutable</key><string>FsearchSample</string>
 <key>CFBundleIdentifier</key><string>dev.fsearch.sample</string>
 <key>CFBundleName</key><string>FsearchSample</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
@@ -74,7 +76,7 @@ PLIST
             xcodebuild -version
             xcrun --show-sdk-path
             sw_vers
-            printf 'Fsearch upstream: 88e63fdf850cf7749deae8198b187accd21f8ba5\n'
+            printf 'Fsearch upstream: %s\n' "$(sed -n 's/^fsearch = .*rev = "\([0-9a-f]\{40\}\)".*$/\1/p' bridge/Cargo.toml)"
             shasum -a 256 bridge/Cargo.lock "$RUST_ARCHIVE" "$EXECUTABLE"
         } > "$ARTIFACTS/build-record.txt"
         bash "$PROJECT_ROOT/scripts/verify-artifact.sh" "$ARCHITECTURE" "$CONFIGURATION"

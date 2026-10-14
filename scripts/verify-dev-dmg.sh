@@ -126,6 +126,7 @@ for file in \
     "$RESOURCES/PROJECT-LICENSE.txt" \
     "$RESOURCES/FSEARCH-LICENSE.txt" \
     "$RESOURCES/THIRD-PARTY-NOTICES.txt" \
+    "$RESOURCES/AppIcon.icns" \
     "$RESOURCES/BUILD-RECORD-arm64.txt" \
     "$RESOURCES/BUILD-RECORD-x86_64.txt"; do
     [[ -f "$file" ]] || { echo "Missing packaged file: $file" >&2; exit 1; }
@@ -158,6 +159,7 @@ done < <(otool -L "$EXECUTABLE" | awk '/^\t/ {print $1}')
 plutil -lint "$PLIST"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == dev.fsearch.desktop.development ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$PLIST")" == "$APP_NAME" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PLIST")" == AppIcon ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")" == 13.0 ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :FsearchPackageStatus' "$PLIST")" == "$DEV_DMG_PACKAGE_STATUS" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :FsearchDevelopmentBuild' "$PLIST")" == true ]]

@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "note": "Fsearch is consumed as an unmodified pinned dependency. Record every temporary patch here before it is applied; an empty list means no private fork exists and none should be fabricated.",
+  "patches": []
+}

@@ -1,0 +1,113 @@
+name: Upstream upgrade PR
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-upgrade-pr
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      FSEARCH_DEV_RUST_VERSION: "1.99.0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Prepare project-local Rust toolchain
+        run: |
+          set -euo pipefail
+          export RUSTUP_HOME="$PWD/.build/rustup-home"
+          mkdir -p "$RUSTUP_HOME"
+          rustup toolchain install "$FSEARCH_DEV_RUST_VERSION" \
+            --profile minimal --no-self-update \
+            --target aarch64-apple-darwin,x86_64-apple-darwin
+          printf '%s\n' "$FSEARCH_DEV_RUST_VERSION" > "$RUSTUP_HOME/toolchain-version"
+          echo "RUSTUP_HOME=$RUSTUP_HOME" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$PWD/.build/cargo-home" >> "$GITHUB_ENV"
+
+      - name: Detect upstream formal release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT_FILE: .build/upgrade/check-result.json
+          SUMMARY_FILE: .build/upgrade/check-summary.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .build/upgrade
+          bash scripts/check-upstream-release.sh \
+            --output "$RESULT_FILE" \
+            --summary "$SUMMARY_FILE" \
+            --run-url "$RUN_URL"
+          if [[ -f "$SUMMARY_FILE" ]]; then cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"; fi
+          status="$(jq -r '.status' "$RESULT_FILE")"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare upgrade candidate and run compatibility checks
+        id: prepare
+        if: steps.check.outputs.status == 'update_available'
+        run: |
+          set -euo pipefail
+          status_code=0
+          bash scripts/prepare-upgrade.sh \
+            --check-result .build/upgrade/check-result.json \
+            --output-dir .build/upgrade || status_code=$?
+          git diff > .build/upgrade/candidate.patch
+          outcome="$(jq -r '.outcome' .build/upgrade/result.json)"
+          branch="$(jq -r '.branch // empty' .build/upgrade/result.json)"
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          if [[ "$status_code" -ne 0 ]]; then
+            echo "Compatibility checks did not pass; the candidate is retained in a draft PR." >&2
+          fi
+
+      - name: Open or refresh the upgrade pull request
+        if: steps.check.outputs.status == 'update_available'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.candidate.version' .build/upgrade/check-result.json)"
+          commit="$(jq -r '.candidate.commit' .build/upgrade/check-result.json)"
+          args=(
+            --branch "${{ steps.prepare.outputs.branch }}"
+            --base "${{ github.event.repository.default_branch }}"
+            --title "Upgrade embedded Fsearch to $version"
+            --body-file .build/upgrade/report.md
+            --message "Upgrade embedded Fsearch to v$version ($commit)"
+          )
+          if [[ "${{ steps.prepare.outputs.outcome }}" != pr-ready ]]; then
+            args+=(--draft)
+          fi
+          bash scripts/open-upgrade-pr.sh "${args[@]}"
+
+      - name: Fail the job when compatibility checks did not pass
+        if: steps.check.outputs.status == 'update_available'
+        run: |
+          set -euo pipefail
+          outcome="$(jq -r '.outcome' .build/upgrade/result.json)"
+          if [[ "$outcome" != pr-ready ]]; then
+            echo "Upgrade candidate kept in a draft pull request; checks reported '$outcome'." >&2
+            exit 1
+          fi
+
+      - name: Upload upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-upgrade
+          path: .build/upgrade/
+          if-no-files-found: warn
+          retention-days: 30

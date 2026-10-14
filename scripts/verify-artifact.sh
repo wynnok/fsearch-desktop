@@ -42,6 +42,8 @@ check_deployment_target() {
     printf 'Deployment targets: all archive objects and executable <= macOS 13.0\n'
     plutil -lint "$APP/Contents/Info.plist"
     [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")" == 13.0 ]]
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")" == AppIcon ]]
+    [[ -f "$APP/Contents/Resources/AppIcon.icns" ]] || { echo 'Missing application icon resource' >&2; exit 1; }
     codesign --verify "$APP"
     # Rust is statically embedded; all remaining dylibs must be OS supplied.
     otool -L "$EXECUTABLE"

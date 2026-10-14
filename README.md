@@ -15,6 +15,8 @@
 | [T27 alpha 交付判定](docs/implementation/T27.md) | 干净提交对应 DMG、安装证据、资源报告及 Wave 5 前置条件 |
 | [T29 发布链路](docs/implementation/T29.md) / [T30 文本查询](docs/implementation/T30.md) | 已实施的发布门禁与受控真实 Engine 正文入口，外部验收仍保留 |
 | [T31 内容选项](docs/implementation/T31.md) / [T32 续查高亮](docs/implementation/T32.md) / [T33 文本验收](docs/implementation/T33.md) | 内容范围/筛选/正则/大小写、cursor 续查、Unicode 高亮及真实 Engine 原生验收 |
+| [T24 升级 PR](docs/implementation/T24.md) | 候选固定、锁定刷新、兼容检查、临时补丁评估与去重 PR 入口 |
+| [Wave 3 切片复核](docs/implementation/Wave3.md) | T11–T18/T21 搜索、文件与本地数据切片的证据与未验证项 |
 | [Wave 4 旅程验收](docs/implementation/Wave4.md) | T25/T26/T28 的证据、失败与未验证项 |
 | [Tickets 索引](docs/tickets/README.md) | 33 张已批准的纵向执行切片、主 Spec 归属、原生阻塞边及认领顺序 |
 | [Spec 索引](docs/specs/README.md) | 14 份已发布规格、原生父子/阻塞关系、执行顺序与 23 项选择追踪 |
@@ -34,6 +36,8 @@
 - Agent 约定：[AGENTS.md](AGENTS.md) 和 [docs/agents/](docs/agents/)。
 - 领域文档：single-context。
 - 本地 `origin` 已关联目标仓库。
+- 应用图标：`Resources/AppIcon.icns`（由 `Resources/AppIcon-source.png` 经 `bash scripts/generate-app-icon.sh` 生成），构建与打包时写入 `Contents/Resources` 并由 Info.plist 的 `CFBundleIconFile` 引用。
+- 上游升级：每日检测（T23）与升级 PR（T24）工作流分离，升级作业只在检查通过后开 PR，绝不自动合并或发行。
 
 ## 开发与验证约束
 

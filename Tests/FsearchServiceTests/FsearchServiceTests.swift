@@ -24,8 +24,17 @@ final class FsearchServiceTests: XCTestCase {
         XCTAssertEqual(response.status.mode, "sample")
         XCTAssertTrue(response.status.ready)
         XCTAssertFalse(response.status.engineValidated)
-        XCTAssertEqual(response.status.upstreamVersion,
-                       "0.2.1 / 88e63fdf850cf7749deae8198b187accd21f8ba5")
+        let lockURL = sampleDirectory.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("bridge/Cargo.lock")
+        let lock = try String(contentsOf: lockURL, encoding: .utf8)
+        let entry = try XCTUnwrap(lock.components(separatedBy: "[[package]]").first {
+            $0.contains("\nname = \"fsearch\"\n")
+        })
+        let versionLine = try XCTUnwrap(entry.components(separatedBy: "\n").first { $0.hasPrefix("version = ") })
+        let sourceLine = try XCTUnwrap(entry.components(separatedBy: "\n").first { $0.hasPrefix("source = ") })
+        let version = try XCTUnwrap(versionLine.split(separator: "\"").last)
+        let revision = try XCTUnwrap(sourceLine.split(separator: "\"").last?.split(separator: "#").last)
+        XCTAssertEqual(response.status.upstreamVersion, "\(version) / \(revision)")
     }
 
     func testEmptyInputDoesNotListAllSamples() async throws {

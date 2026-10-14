@@ -9,6 +9,18 @@ mkdir -p "$BUILD_ROOT"
 WORKSPACE="$(mktemp -d "$BUILD_ROOT/run.XXXXXX")"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
+# Controlled release fixtures have their own fixed current pin, independent of
+# the app dependency being evaluated by an upgrade compatibility run.
+export FSEARCH_PIN_CARGO_TOML="$WORKSPACE/Cargo.toml"
+export FSEARCH_PIN_CARGO_LOCK="$WORKSPACE/Cargo.lock"
+printf 'fsearch = { git = "https://github.com/noahdunnagan/fsearch", rev = "88e63fdf850cf7749deae8198b187accd21f8ba5" }\n' > "$FSEARCH_PIN_CARGO_TOML"
+cat > "$FSEARCH_PIN_CARGO_LOCK" <<'LOCK'
+[[package]]
+name = "fsearch"
+version = "0.2.1"
+source = "git+https://github.com/noahdunnagan/fsearch?rev=88e63fdf850cf7749deae8198b187accd21f8ba5#88e63fdf850cf7749deae8198b187accd21f8ba5"
+LOCK
+
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1

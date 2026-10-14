@@ -391,7 +391,7 @@ private struct ResultsTableView: NSViewRepresentable {
             menu.addItem(item)
         }
         table.menu = menu
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         table.setAccessibilityLabel("搜索结果")
@@ -433,6 +433,7 @@ private struct ResultsTableView: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.documentView = table
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         return scrollView
     }

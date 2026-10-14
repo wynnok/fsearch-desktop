@@ -6,7 +6,7 @@
 - [T01 / #15](https://github.com/wynnok/fsearch-desktop/issues/15) 是当前唯一无阻塞执行票；工作从其开始，随后只领取阻塞项都已完成的票。
 - 执行状态以 GitHub 为准，本地保存正文副本；父 Spec 的标题、正文、标签和状态没有被本次拆分编辑或关闭。
 - Spec 的整体依赖保留，Ticket 的前置只指向真正需要的能力，不把自身父 Spec 关闭设为前置。跨 Spec 验收关系写在各票 Parent 中，不能仅凭直接子票计数断言 Spec 全部满足。
-- 尚未开始实现、执行索引扫描、创建构建工作流或发布安装包。本次授权为 Tickets 拆分与发布。
+- 本文件是拆分时的规划记录。实现进展与逐票证据见 [实施报告](../implementation/)；执行状态以 GitHub 为准，外部门禁未解除的票保持 OPEN。
 
 ## T 编号与 GitHub 编号
 
@@ -77,4 +77,52 @@
 详细用户批准的拆分记录见 [提案](proposal.md)，源规格见 [Spec 索引](../specs/README.md)。主测试接缝沿用已确认的 Swift 引擎服务；系统动作、权限、安装发行以必要原生/成品检查补充。
 
 签名身份、Intel 实机、最低系统及专用权限环境缺失时，对应门禁保持未验证；其他无真实依赖的切片可推进。ready-for-agent 不是测试通过或产品完成。
+
+## 2026-10-14 全票复核
+
+GitHub 逐票核对：7 CLOSED、26 OPEN；本地实现不等于所有验收完成。源 Issue 正文与本地票据、实施报告、代码和回归逐项交叉检查。本次没有修改外部 Issue 状态。
+
+| Ticket | 实施证据 | 当前验收结论或剩余项 |
+| --- | --- | --- |
+| T01 | [报告](../implementation/T01.md) | CLOSED，最小真实样本查询 |
+| T02 | [报告](../implementation/T02.md) | CLOSED，Unicode、字面输入、错误与 panic 恢复 |
+| T03 | [报告](../implementation/T03.md) | CLOSED，完整快照、自然排序、分页 |
+| T04 | [报告](../implementation/T04.md) | CLOSED，索引大小与修改时间全局排序 |
+| T05 | [报告](../implementation/T05.md) | CLOSED，异步、取消、过期响应 |
+| T06 | [报告](../implementation/T06.md) | 两架构构建通过；Intel/macOS 13 实机未验证 |
+| T07 | [报告](../implementation/T07.md) | CLOSED，受限真实 Engine、独立索引、通知及恢复 |
+| T08 | [报告](../implementation/T08.md) | 权限探测链路已有；实际签名主体与 TCC 专用环境缺失 |
+| T09 | [报告](../implementation/T09.md) | CLOSED，受控真实资源测量；不代表个人磁盘成本 |
+| T10 | [报告](../implementation/T10.md) | 主窗口及样本原生旅程通过；M1 外部门禁未解除 |
+| T11 | [Wave 3](../implementation/Wave3.md) | 范围/隐藏项已实现；个人磁盘覆盖未交付 |
+| T12 | [Wave 3](../implementation/Wave3.md) | 组合属性筛选及公开服务回归通过；保留前置门禁 |
+| T13 | [Wave 3](../implementation/Wave3.md) | 变化刷新、选择保持与晚返回回归；真实用户磁盘未验收 |
+| T14 | [Wave 3](../implementation/Wave3.md) | 引导跳过与索引状态已实现；真实授权/撤销未验证 |
+| T15 | [Wave 3](../implementation/Wave3.md) | 检查器、实际属性与过期详情回归通过；保留前置门禁 |
+| T16 | [Wave 3](../implementation/Wave3.md) | 系统动作目标通过；Finder 可见选中状态待人工观察 |
+| T17 | [Wave 3](../implementation/Wave3.md) | Quick Look 原生样本通过；保留前置门禁 |
+| T18 | [Wave 3](../implementation/Wave3.md) | 关窗重开/退出样本通过；真实后台覆盖保留门禁 |
+| T19 | [报告](../implementation/T19.md) | 偏好持久化与不保存查询回归；真正退出重启人工旅程待验 |
+| T20 | [报告](../implementation/T20.md) | 诊断脱敏成品通过；保存面板完整交互待人工验收 |
+| T21 | [Wave 3](../implementation/Wave3.md) | 版本/更新入口与响应回归；真实 Release 下载尚不存在 |
+| T22 | [报告](../implementation/T22.md) | 本机 Universal DMG/安装通过；实际 CI 产物下载未验证 |
+| T23 | [报告](../implementation/T23.md) | 每日检测及受控 fixtures 通过；实际 Actions 未验证 |
+| T24 | [报告](../implementation/T24.md) | 升级 PR 实施及失败重试回归通过；真实云端候选路径未验证 |
+| T25 | [Wave 4](../implementation/Wave4.md) | 样本搜索旅程与指南已有；真实覆盖及完整 alpha 门禁未通过 |
+| T26 | [Wave 4](../implementation/Wave4.md) | 样本文件/数据旅程已有；Finder/保存面板/重启人工缺口保留 |
+| T27 | [报告](../implementation/T27.md) | 完整 alpha 尚不可交付；实机、权限、CI 下载缺证据 |
+| T28 | [报告](../implementation/T28.md) | 签名公证链路和失败门禁已有；缺开发者凭据，真实链路延期 |
+| T29 | [报告](../implementation/T29.md) | tag 发行门禁已有；无合格批准/签名/实际 Release，不发行 |
+| T30 | [报告](../implementation/T30.md) | 受控真实 Engine 内容入口已有；普通启动仍仅样本名称搜索 |
+| T31 | [报告](../implementation/T31.md) | 受控内容范围、筛选、正则、大小写通过；保留 alpha 前置门禁 |
+| T32 | [报告](../implementation/T32.md) | 预算、cursor 续查与 Unicode 高亮通过；保留 alpha 前置门禁 |
+| T33 | [报告](../implementation/T33.md) | 受控正文原生旅程与边界说明已有；个人磁盘/完整发行未验收 |
+
+本次用户决策：先运行样本界面；个人磁盘入口另行推进。Intel、macOS 13、干净账号首次安装保留未验证；本地 ad-hoc 签名不要求开发者账号，Developer ID、公证和正式发行延后。
+
+本次修复：真实 Engine panic 验证的 CString 生命周期；T24 既有 PR 的候选/报告/draft 刷新及已验证基线保留；升级测试与构建记录的旧 pin 硬编码；结果表列宽适配与横向滚动，避免大小/时间列不可见。复核分别检查规范和规格；默认个人磁盘入口是明确延期的产品缺口，不能以样本通过标为完成。
+
+本机验证：Rust check、Swift 构建、完整 XCTest（服务 56 + 应用 20 = 76 项，0 失败）、两架构构建/链接及最低部署目标核对通过。现有 shell 回归、T24 本地 Git 失败重试、shell/YAML 语法与 pin 一致性检查通过。原生样本名称旅程、文件动作/Quick Look、深浅模式、受限真实 Engine 生命周期/panic 恢复及受控正文旅程均通过。GUI 与 Engine Seatbelt 验证在外层执行沙箱之外运行，范围仍限制在项目内受控样本。未将这些结果外推为真实 TCC、Intel/macOS 13、CI 下载或正式发行验收。
+
+规范复核：发现的实现问题已修复，最终无未修复项。规格复核：发现的 T24 重试错误已修复，剩余为上述用户明确延期的入口及外部验收条件。
 

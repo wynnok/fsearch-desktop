@@ -49,6 +49,7 @@ done < <(find "$APP/Contents" -type f -print0)
 cmp "$PROJECT_ROOT/LICENSE" "$APP/Contents/Resources/PROJECT-LICENSE.txt"
 cmp "$PROJECT_ROOT/bridge/FSEARCH-LICENSE" "$APP/Contents/Resources/FSEARCH-LICENSE.txt"
 cmp "$DIRECTORY/THIRD-PARTY-NOTICES.txt" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+cmp "$PROJECT_ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 codesign --verify --deep --strict "$APP"
 DETAILS="$(codesign -dvvv "$APP" 2>&1)"
 printf '%s\n' "$DETAILS" | grep -q '^Authority=Developer ID Application:'

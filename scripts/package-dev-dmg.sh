@@ -86,6 +86,7 @@ lipo -create "$ARM_EXECUTABLE" "$X86_EXECUTABLE" -output "$STAGED_EXECUTABLE"
 set_plist_string CFBundleIdentifier dev.fsearch.desktop.development
 set_plist_string CFBundleName "$APP_NAME"
 set_plist_string CFBundleDisplayName "$APP_NAME"
+set_plist_string CFBundleIconFile AppIcon
 set_plist_string CFBundleShortVersionString "$APP_VERSION"
 set_plist_string FsearchDevelopmentVersion "${APP_VERSION}-dev.${BUILD_SHORT_COMMIT}"
 set_plist_string FsearchBuildCommit "$BUILD_COMMIT"
@@ -97,6 +98,7 @@ set_plist_bool FsearchNotarized false
 cp "$PROJECT_ROOT/LICENSE" "$STAGED_RESOURCES/PROJECT-LICENSE.txt"
 cp "$PROJECT_ROOT/bridge/FSEARCH-LICENSE" "$STAGED_RESOURCES/FSEARCH-LICENSE.txt"
 cp "$NOTICES" "$STAGED_RESOURCES/THIRD-PARTY-NOTICES.txt"
+cp "$PROJECT_ROOT/Resources/AppIcon.icns" "$STAGED_RESOURCES/AppIcon.icns"
 cp "$PROJECT_ROOT/.build/artifacts/arm64/release/build-record.txt" "$STAGED_RESOURCES/BUILD-RECORD-arm64.txt"
 cp "$PROJECT_ROOT/.build/artifacts/x86_64/release/build-record.txt" "$STAGED_RESOURCES/BUILD-RECORD-x86_64.txt"
 

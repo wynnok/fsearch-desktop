@@ -69,7 +69,9 @@ done
 
 [[ "$REQUEST_TIMEOUT" =~ ^[0-9]+$ ]] || usage
 
-toml_commit="$(sed -n 's/^fsearch = .*rev = "\([0-9a-f]\{40\}\)".*$/\1/p' "$PROJECT_ROOT/bridge/Cargo.toml")"
+CARGO_TOML="${FSEARCH_PIN_CARGO_TOML:-$PROJECT_ROOT/bridge/Cargo.toml}"
+CARGO_LOCK="${FSEARCH_PIN_CARGO_LOCK:-$PROJECT_ROOT/bridge/Cargo.lock}"
+toml_commit="$(sed -n 's/^fsearch = .*rev = "\([0-9a-f]\{40\}\)".*$/\1/p' "$CARGO_TOML")"
 lock_version="$(awk '
     /^\[\[package\]\]$/ { in_fsearch = 0 }
     /^name = "fsearch"$/ { in_fsearch = 1; next }
@@ -80,12 +82,12 @@ lock_version="$(awk '
         print line
         exit
     }
-' "$PROJECT_ROOT/bridge/Cargo.lock")"
+' "$CARGO_LOCK")"
 lock_source="$(awk '
     /^\[\[package\]\]$/ { in_fsearch = 0 }
     /^name = "fsearch"$/ { in_fsearch = 1; next }
     in_fsearch && /^source = "git\+/ { print; exit }
-' "$PROJECT_ROOT/bridge/Cargo.lock")"
+' "$CARGO_LOCK")"
 lock_commit="${lock_source##*rev=}"
 lock_commit="${lock_commit%%#*}"
 

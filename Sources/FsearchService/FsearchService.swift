@@ -531,12 +531,12 @@ public actor FsearchService {
     #if DEBUG
     @_spi(Testing) public func injectEngineQueryPanic() throws {
         guard handle.isEngine else { throw FsearchError.bridge("Panic injection requires Engine mode") }
-        let response = try decodeOwned(
-            fsearch_engine_test_panic(handle.pointer, String(decoding: try JSONEncoder().encode(
-                BridgeRequest(SearchRequest(query: "engine-proof"))
-            ), as: UTF8.self).withCString { $0 }),
-            as: BridgeResponse.self
-        )
+        let json = String(decoding: try JSONEncoder().encode(
+            BridgeRequest(SearchRequest(query: "engine-proof"))
+        ), as: UTF8.self)
+        let response = try json.withCString {
+            try decodeOwned(fsearch_engine_test_panic(handle.pointer, $0), as: BridgeResponse.self)
+        }
         if let message = response.error {
             throw response.errorKind == "bridge" ? FsearchError.bridge(message) : FsearchError.query(message)
         }
