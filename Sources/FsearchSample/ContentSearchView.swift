@@ -83,7 +83,7 @@ struct ContentSearchView: View {
             }
             SearchFiltersView(configuration: $state.configuration)
             HStack {
-                TextField("输入正文查询", text: $state.pattern).accessibilityLabel("正文查询")
+                TextField("输入文件中的文本…", text: $state.pattern).accessibilityLabel("文本内容查询")
                     .onSubmit { Task { await state.search() } }
                 Button("查询正文") { Task { await state.search() } }.disabled(state.busy)
             }

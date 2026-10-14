@@ -44,7 +44,7 @@ final class SearchModel: ObservableObject {
     let selectionState = SearchSelectionState()
     @Published private(set) var activity: SearchActivity = .idle
     @Published private(set) var focusRequest = 0
-    @Published private var localMessage = "输入文件名后点击查询，或按 Command-Return。"
+    @Published private var localMessage = "输入文件名后点击查询文件名，或按 Return。"
     private(set) var controller: SnapshotQueryController?
     private var observation: AnyCancellable?
     private var searchGeneration = 0
@@ -123,6 +123,7 @@ final class SearchModel: ObservableObject {
         }
     }
     private var service: FsearchService?
+    var canSearchContent: Bool { isEngineMode && service != nil }
     private var smokeDirectory: URL?
     private(set) var isEngineMode = false
     private var engineWorkspace: URL?

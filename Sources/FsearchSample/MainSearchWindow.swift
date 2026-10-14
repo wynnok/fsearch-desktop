@@ -42,6 +42,7 @@ struct SearchCommands: Commands {
             Button("权限与索引重新检查") { model.recheckPermissions() }
             Button("导出诊断报告…") { model.exportDiagnostics() }
             Button("文本内容搜索…") { model.showsContentSearch = true }
+                .disabled(!model.canSearchContent)
             Button("取消") { model.cancel() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(!model.busy)
@@ -108,14 +109,30 @@ struct SearchView: View {
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
+                Text("文件名搜索").font(.headline)
+                Spacer()
+                if !model.canSearchContent {
+                    Text("当前模式仅支持文件名搜索")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button { model.showsContentSearch = true } label: {
+                    Label("文本内容搜索…", systemImage: "doc.text.magnifyingglass")
+                }
+                .disabled(!model.canSearchContent)
+                .help(model.canSearchContent ? "使用独立输入框搜索文件中的文本" : "样本名称模式不支持正文搜索")
+                .accessibilityIdentifier("content-search")
+            }
+
+            HStack(spacing: 10) {
                 SearchQueryEditor(
                     text: $model.configuration.query,
-                    focusRequest: model.focusRequest
+                    focusRequest: model.focusRequest,
+                    onSubmit: model.submit
                 )
                     .frame(minWidth: 280, minHeight: 44, maxHeight: 44)
                     .overlay(alignment: .topLeading) {
                         if model.configuration.query.isEmpty {
-                            Text("输入文件名…")
+                            Text("输入文件名或名称片段…")
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 6).padding(.top, 6)
                                 .allowsHitTesting(false)
@@ -127,7 +144,7 @@ struct SearchView: View {
                     }
 
                 Button { model.submit() } label: {
-                    Label("查询", systemImage: "magnifyingglass")
+                    Label("查询文件名", systemImage: "magnifyingglass")
                 }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -137,6 +154,10 @@ struct SearchView: View {
                     Button("取消") { model.cancel() }
                 }
             }
+
+            Text("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
+                .font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("name-search-explanation")
 
             HStack(spacing: 12) {
                 Picker("名称匹配方式", selection: $model.configuration.nameMode) {
@@ -249,13 +270,15 @@ struct SearchView: View {
 private struct SearchQueryEditor: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: Int
+    let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = NameQueryTextView()
+        textView.onSubmit = onSubmit
         textView.isEditable = true
         textView.isSelectable = true
         textView.isRichText = false
@@ -280,8 +303,9 @@ private struct SearchQueryEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
+        guard let textView = scrollView.documentView as? NameQueryTextView else { return }
         context.coordinator.parent = self
+        textView.onSubmit = onSubmit
         if textView.string != text {
             textView.string = text
         }
@@ -304,6 +328,25 @@ private struct SearchQueryEditor: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
         }
+    }
+}
+
+private final class NameQueryTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.shift, .command, .control, .option])
+        if [36, 76].contains(event.keyCode), !hasMarkedText() {
+            if modifiers.isEmpty || modifiers == .command {
+                onSubmit?()
+                return
+            }
+            if modifiers == .shift {
+                insertNewlineIgnoringFieldEditor(nil)
+                return
+            }
+        }
+        super.keyDown(with: event)
     }
 }
 

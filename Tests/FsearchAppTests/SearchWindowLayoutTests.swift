@@ -5,6 +5,88 @@ import XCTest
 
 @MainActor
 final class SearchWindowLayoutTests: XCTestCase {
+    func testReturnQueriesFileNamesWithoutInsertingNewline() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        model.query = "report"
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let editor = try XCTUnwrap(firstView(of: NSTextView.self, in: host))
+        window.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                                 timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                 characters: "\r", charactersIgnoringModifiers: "\r",
+                                                 isARepeat: false, keyCode: 36))
+        editor.keyDown(with: event)
+        for _ in 0..<100 where model.results.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(editor.string, "report")
+        XCTAssertEqual(model.query, "report")
+        XCTAssertEqual(Set(model.results.map { URL(fileURLWithPath: $0.path).lastPathComponent }),
+                       ["report2.txt", "report10.txt"])
+    }
+
+    func testShiftReturnPreservesNewlineAsFileNameDataWithoutQuerying() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        model.query = "report"
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let editor = try XCTUnwrap(firstView(of: NSTextView.self, in: host))
+        window.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift,
+                                                 timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                 characters: "\r", charactersIgnoringModifiers: "\r",
+                                                 isARepeat: false, keyCode: 36))
+        editor.keyDown(with: event)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(editor.string, "report\n")
+        XCTAssertEqual(model.query, "report\n")
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    func testSampleModeCannotOpenContentSearchFromMainWindow() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        XCTAssertFalse(model.canSearchContent)
+        let point = host.convert(NSPoint(x: host.bounds.maxX - 80,
+                                        y: host.isFlipped ? 25 : host.bounds.maxY - 25), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                       timestamp: 0, windowNumber: window.windowNumber,
+                                                       context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            window.sendEvent(event)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(model.showsContentSearch)
+    }
+
     func testSearchControlsAndResultsFitWithoutResizingAfterSearch() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
