@@ -178,6 +178,12 @@ final class SearchWindowLayoutTests: XCTestCase {
                              "Content results should remain the main workspace")
     }
 
+    func testFooterTextLeadingInsetTracksPathSelection() {
+        XCTAssertEqual(SearchFooterLayout.textLeadingInset(alignsWithPathContent: false), 0)
+        XCTAssertEqual(SearchFooterLayout.textLeadingInset(alignsWithPathContent: true),
+                       SearchFooterLayout.pathContentLeadingInset)
+    }
+
     func testResultMenuUsesSharedActionNamesAndIconsAndRequiresSingleSelection() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])

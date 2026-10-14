@@ -27,9 +27,13 @@ enum SearchSortColumn: String {
     case modified
 }
 
-private enum SearchFooterLayout {
+enum SearchFooterLayout {
     // NSPathControl's standard style draws its content inside the control frame.
-    static let contentLeadingInset: CGFloat = 10
+    static let pathContentLeadingInset: CGFloat = 10
+
+    static func textLeadingInset(alignsWithPathContent: Bool) -> CGFloat {
+        alignsWithPathContent ? pathContentLeadingInset : 0
+    }
 }
 
 struct SearchCommands: Commands {
@@ -238,15 +242,19 @@ struct SearchView: View {
                 }
                 if let pagination = model.paginationMessage {
                     Text(pagination).font(.caption).foregroundStyle(.secondary)
-                        .padding(.leading, SearchFooterLayout.contentLeadingInset)
+                        .padding(.leading, footerTextLeadingInset)
                 }
                 if let message = actions.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                        .padding(.leading, SearchFooterLayout.contentLeadingInset)
+                        .padding(.leading, footerTextLeadingInset)
                 }
             }
             .padding(12)
         }
+    }
+
+    private var footerTextLeadingInset: CGFloat {
+        SearchFooterLayout.textLeadingInset(alignsWithPathContent: singleSelectedPath != nil)
     }
 
     private var singleSelectedPath: String? {
