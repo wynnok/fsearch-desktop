@@ -230,7 +230,7 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
 
     func togglePreview(path: String?) {
         guard let panel = QLPreviewPanel.shared() else { message = "系统 Quick Look 不可用"; return }
-        if panel.isVisible { panel.close(); previewURL = nil; return }
+        if panel.isVisible { previewURL = nil; panel.order(.out, relativeTo: 0); return }
         guard let url = previewableURL(path: path) else { return }
         previewURL = url
         panel.dataSource = self
@@ -240,10 +240,11 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     }
 
     func updatePreview(path: String?) {
-        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible else { return }
+        guard previewURL != nil, QLPreviewPanel.sharedPreviewPanelExists(),
+              let panel = QLPreviewPanel.shared(), panel.isVisible else { return }
         guard let url = previewableURL(path: path) else {
             previewURL = nil
-            panel.close()
+            panel.order(.out, relativeTo: 0)
             return
         }
         previewURL = url
@@ -266,8 +267,8 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     }
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         if event.type == .keyDown && (event.keyCode == 53 || event.keyCode == 49) {
-            panel.close()
             previewURL = nil
+            panel.order(.out, relativeTo: 0)
             return true
         }
         if event.type == .keyDown && (event.keyCode == 125 || event.keyCode == 126) {

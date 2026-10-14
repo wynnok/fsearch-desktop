@@ -100,13 +100,27 @@ public final class SnapshotQueryController: ObservableObject {
 
     // The upstream service already applied its notifications; no second watcher.
     public func refreshCurrentQuery() async {
-        guard let query = currentQuery else { return }
-        let loadedWindow = max(query.pageSize, results.count)
-        let refreshGeneration = generation + 1
-        await self.query(query.request, sort: query.sort,
-                         maximumResults: query.maximumResults, pageSize: loadedWindow)
-        if generation == refreshGeneration {
-            currentQuery = query
+        guard let query = currentQuery, task == nil,
+              phase == .complete || phase == .partial else { return }
+        let refreshGeneration = generation
+        let loader = self.loader
+        let work = Task { try await loader(query.request, query.sort, query.maximumResults, false) }
+        task = work
+        defer { if generation == refreshGeneration { task = nil } }
+        do {
+            let result = try await work.value
+            guard generation == refreshGeneration else { return }
+            try Task.checkCancellation()
+            guard snapshot?.hasSameResults(as: result) != true else { return }
+            let loadedWindow = max(query.pageSize, results.count)
+            let page = try result.page(pageSize: loadedWindow)
+            snapshot = result
+            results = page.results
+            nextCursor = page.nextCursor
+            phase = result.isComplete ? .complete : .partial
+        } catch {
+            guard generation == refreshGeneration else { return }
+            phase = error is CancellationError ? .cancelled : .failed(error.localizedDescription)
         }
     }
 

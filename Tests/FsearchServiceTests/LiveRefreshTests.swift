@@ -50,6 +50,63 @@ private actor RefreshGate {
 
 extension LiveRefreshTests {
     @MainActor
+    func testLoadingAnotherPageDuringBackgroundRefreshRetainsExpandedResults() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/live-refresh/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in ["item1", "item2", "item3"] {
+            try Data("fixture".utf8).write(to: root.appendingPathComponent(name))
+        }
+        let service = try FsearchService(sampleDirectory: root)
+        let gate = RefreshGate()
+        let controller = SnapshotQueryController { request, sort, maximum, _ in
+            await gate.waitIfEnabled()
+            return try await service.snapshot(request, sort: sort, maximumResults: maximum)
+        }
+        await controller.query(SearchRequest(query: "item"), sort: .descending, pageSize: 1)
+        await gate.enable()
+        let refresh = Task { await controller.refreshCurrentQuery() }
+        while !(await gate.isWaiting()) { await Task.yield() }
+        try controller.loadMore(pageSize: 1)
+        try Data("fixture".utf8).write(to: root.appendingPathComponent("item4"))
+        try await service.refreshSample()
+        await gate.release()
+        await refresh.value
+        XCTAssertEqual(controller.totalCount, 4)
+        XCTAssertEqual(controller.results.map { ($0.path as NSString).lastPathComponent }, ["item4", "item3"])
+        XCTAssertNotNil(controller.nextCursor)
+    }
+
+    @MainActor
+    func testBackgroundRefreshKeepsCompletedResultsAndDoesNotRepublishIdenticalSnapshot() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("fixtures/sample")
+        let service = try FsearchService(sampleDirectory: root)
+        let gate = RefreshGate()
+        let controller = SnapshotQueryController { request, sort, maximum, _ in
+            await gate.waitIfEnabled()
+            return try await service.snapshot(request, sort: sort, maximumResults: maximum)
+        }
+        await controller.query(SearchRequest(query: "report"), pageSize: 1)
+        let snapshotID = controller.snapshot?.id
+        let paths = controller.results.map(\.path)
+        await gate.enable()
+        let refresh = Task { await controller.refreshCurrentQuery() }
+        while !(await gate.isWaiting()) { await Task.yield() }
+        XCTAssertFalse(controller.isBusy)
+        XCTAssertEqual(controller.phase, .complete)
+        XCTAssertEqual(controller.totalCount, 2)
+        XCTAssertEqual(controller.snapshot?.id, snapshotID)
+        XCTAssertEqual(controller.results.map(\.path), paths)
+        await gate.release()
+        await refresh.value
+        XCTAssertEqual(controller.snapshot?.id, snapshotID)
+        XCTAssertEqual(controller.totalCount, 2)
+    }
+
+    @MainActor
     func testLateRefreshCannotReplaceNewQueryAndItsNextRefreshConfiguration() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

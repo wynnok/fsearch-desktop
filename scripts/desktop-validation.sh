@@ -16,6 +16,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 mkdir -p "$WORKSPACE/fixtures"
 printf 'desktop-content-proof\n' > "$WORKSPACE/fixtures/desktop-proof.txt"
+for number in {1..157}; do
+    printf 'fixture\n' > "$WORKSPACE/fixtures/query-row-proof-$number.txt"
+done
 dev_dmg_run_command "$OUTPUT/desktop.log" arch "-$(uname -m)" "$APP/Contents/MacOS/FsearchSample" --desktop-smoke "$WORKSPACE"
 grep -q 'Desktop startup, name search, text content search, permission probe and live changes: passed' "$OUTPUT/desktop.log"
 ruby -rjson - "$WORKSPACE/desktop-status.json" <<'RUBY'
@@ -26,5 +29,5 @@ raise 'Not a ready desktop Engine' unless status['mode'] == 'engine' && status['
 end
 puts "Desktop engine permission probe: #{status['fullDiskAccess'] ? 'granted' : 'restricted'}"
 RUBY
-cp "$WORKSPACE/desktop-status.json" "$WORKSPACE/desktop-search.png" "$OUTPUT/"
+cp "$WORKSPACE/desktop-status.json" "$WORKSPACE/desktop-search.png" "$WORKSPACE/desktop-results-157.png" "$OUTPUT/"
 echo 'Packaged desktop startup/name/content/live-change journey: passed'

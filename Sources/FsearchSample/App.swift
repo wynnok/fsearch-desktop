@@ -19,7 +19,7 @@ final class SearchModel: ObservableObject {
     @Published private(set) var engineVersion = "尚未读取"
     @Published private(set) var selectionMessage: String?
     @Published private(set) var applicationMessage: String?
-    @Published private(set) var observedChangeCount = 0
+    private(set) var observedChangeCount = 0
     lazy var permissionStatus = PermissionStatusModel(
         onboardingDismissed: preferencesStore?.onboardingDismissed ?? false,
         onDismiss: { [weak self] in self?.persistPreferences(onboardingDismissed: true) }
@@ -28,6 +28,7 @@ final class SearchModel: ObservableObject {
     private var restoringPreferences = false
     private var preferenceObservation: AnyCancellable?
     private var pollingTask: Task<Void, Never>?
+    private var isPollingService = false
     private var changesPending = false
     private var pendingRenames: [String: String] = [:]
     private var validationMessage: String?
@@ -37,8 +38,9 @@ final class SearchModel: ObservableObject {
             guard configuration != oldValue, !restoringPreferences else { return }
             invalidate()
             persistPreferences()
-            if configuration.scope != oldValue.scope || configuration.showsHidden != oldValue.showsHidden
-                || configuration.filters != oldValue.filters { submit() }
+            if (configuration.scope != oldValue.scope || configuration.showsHidden != oldValue.showsHidden
+                || configuration.filters != oldValue.filters)
+                && (configuration.hasQueryInput || configuration.filters.isEffective) { submit() }
         }
     }
     let selectionState = SearchSelectionState()
@@ -134,9 +136,10 @@ final class SearchModel: ObservableObject {
     private(set) var isPermissionProbeMode = false
     private var permissionProbeArguments: PermissionProbeArguments?
     private var permissionProbeStarted = false
-    private let pageSize = 2
+    private let pageSize: Int
 
     init(arguments: [String] = CommandLine.arguments, preferences: LocalPreferences? = nil) {
+        pageSize = arguments.contains("--smoke") || arguments.contains("--engine-smoke") ? 2 : 200
         let isValidation = arguments.contains("--smoke") || arguments.contains("--engine-smoke")
             || arguments.contains("--permission-probe") || arguments.contains("--content-smoke")
             || arguments.contains("--content-workspace")
@@ -236,7 +239,9 @@ final class SearchModel: ObservableObject {
     deinit { pollingTask?.cancel() }
 
     private func pollService() async {
-        guard let service else { return }
+        guard !isPollingService, let service else { return }
+        isPollingService = true
+        defer { isPollingService = false }
         do {
             let status = try await service.status()
             let changes = try await service.changes()
@@ -621,7 +626,17 @@ final class SearchModel: ObservableObject {
                 if results.contains(where: { $0.path == path }) { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            try require(results.map(\.path) == [path], "Desktop name search did not find fixture")
+            try require(results.map(\.path) == [path],
+                        "Desktop name search did not find fixture: query=\(query), count=\(results.count), phase=\(String(describing: controller?.phase))")
+            query = "query-row-proof"
+            await search()
+            try require(results.count == 157 && nextCursor == nil && message.contains("157 / 157"),
+                        "Desktop result list still truncates the first page to two rows")
+            let unchangedSnapshot = inspectorRefreshID
+            try await Task.sleep(for: .seconds(1))
+            try require(!busy && inspectorRefreshID == unchangedSnapshot,
+                        "Unrelated background changes restarted or replaced the completed query")
+            try await capture("desktop-results-157", under: workspace)
             contentSearch.configuration.scope = .folder(fixture.path)
             contentSearch.pattern = "desktop-content-proof"
             await contentSearch.search()

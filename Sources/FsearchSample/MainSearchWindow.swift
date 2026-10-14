@@ -547,9 +547,10 @@ private struct ResultsTableView: NSViewRepresentable {
         let offset = firstVisible >= 0 ? origin.y - table.rect(ofRow: firstVisible).minY : 0
         let selectionChanged = coordinator.renderedSelection != selectionState.selectedPaths
             || coordinator.renderedPrimary != selectionState.selectedPath
+        let resultsChanged = coordinator.renderedResults != results
         coordinator.isUpdatingSelection = true
         coordinator.parent = self
-        table.reloadData()
+        if resultsChanged { table.reloadData() }
 
         let desiredDescriptors = sortDescriptors
         if table.sortDescriptors.first?.key != desiredDescriptors.first?.key
@@ -557,8 +558,8 @@ private struct ResultsTableView: NSViewRepresentable {
             table.sortDescriptors = desiredDescriptors
         }
         let rows = IndexSet(results.indices.filter { selectionState.selectedPaths.contains(results[$0].path) })
-        table.selectRowIndexes(rows, byExtendingSelection: false)
-        if let anchor, let row = results.firstIndex(where: { $0.path == anchor }) {
+        if resultsChanged || selectionChanged { table.selectRowIndexes(rows, byExtendingSelection: false) }
+        if resultsChanged, let anchor, let row = results.firstIndex(where: { $0.path == anchor }) {
             let y = table.rect(ofRow: row).minY + offset
             scrollView.contentView.scroll(to: NSPoint(x: origin.x, y: max(0, min(y, table.bounds.height - scrollView.contentView.bounds.height))))
             scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -569,6 +570,7 @@ private struct ResultsTableView: NSViewRepresentable {
         }
         coordinator.renderedSelection = selectionState.selectedPaths
         coordinator.renderedPrimary = selectionState.selectedPath
+        coordinator.renderedResults = results
         coordinator.isUpdatingSelection = false
     }
 
@@ -616,6 +618,7 @@ private struct ResultsTableView: NSViewRepresentable {
         var isUpdatingSelection = false
         var renderedSelection: Set<String> = []
         var renderedPrimary: String?
+        var renderedResults: [SearchResult]?
 
         init(parent: ResultsTableView) {
             self.parent = parent
@@ -772,8 +775,7 @@ private struct ResultsTableView: NSViewRepresentable {
 
             switch tableColumn.identifier.rawValue {
             case "location":
-                cell.textField?.stringValue = URL(fileURLWithPath: result.path)
-                    .deletingLastPathComponent().path
+                cell.textField?.stringValue = (result.path as NSString).deletingLastPathComponent
             case "size":
                 cell.textField?.stringValue = ByteCountFormatter.string(
                     fromByteCount: Int64(result.indexedSize),
@@ -784,7 +786,7 @@ private struct ResultsTableView: NSViewRepresentable {
                     timeIntervalSince1970: TimeInterval(result.modifiedAt)
                 ).formatted()
             default:
-                cell.textField?.stringValue = URL(fileURLWithPath: result.path).lastPathComponent
+                cell.textField?.stringValue = (result.path as NSString).lastPathComponent
             }
             cell.textField?.toolTip = result.path
             return cell

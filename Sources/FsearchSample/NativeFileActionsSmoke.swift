@@ -102,6 +102,7 @@ enum NativeFileActionsSmoke {
         checks["selectionUpdatesPreview"] = actions.previewURL?.path == selectionState.selectedPath
         if let panel = QLPreviewPanel.shared() {
             _ = actions.previewPanel(panel, handle: try event(53, "\u{1b}"))
+            actions.updatePreview(path: selectionState.selectedPath)
             // Quick Look's preview service can finish closing asynchronously.
             for _ in 0..<250 where panel.isVisible { try await Task.sleep(for: .milliseconds(20)) }
             checks["escapeClosesPreview"] = !panel.isVisible && actions.previewURL == nil

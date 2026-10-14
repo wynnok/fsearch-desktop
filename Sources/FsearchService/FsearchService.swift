@@ -32,7 +32,7 @@ public struct SearchRequest: Codable, Sendable {
     }
 }
 
-public struct SearchResult: Codable, Sendable, Identifiable {
+public struct SearchResult: Codable, Sendable, Identifiable, Equatable {
     public var id: String { path }
     public let path: String
     public let kind: UInt8

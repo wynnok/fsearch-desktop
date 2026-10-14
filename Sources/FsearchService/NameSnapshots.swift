@@ -59,7 +59,8 @@ public struct NameSnapshot: Sendable {
     public var totalCount: Int? { isComplete ? results.count : nil }
     private let results: [SearchResult]
 
-    fileprivate init(response: SearchResponse, sort: NameSort) {
+    fileprivate init(response: SearchResponse, sort: NameSort) throws {
+        try Task.checkCancellation()
         id = UUID()
         requestID = response.requestID
         isComplete = response.isComplete
@@ -68,14 +69,15 @@ public struct NameSnapshot: Sendable {
             results = response.results
             return
         }
-        results = response.results.sorted { lhs, rhs in
+        results = try response.results.sorted { lhs, rhs in
+            try Task.checkCancellation()
             let comparison: ComparisonResult
             switch sort {
             case .relevance:
                 comparison = .orderedSame
             case .ascending, .descending:
-                let leftName = URL(fileURLWithPath: lhs.path).lastPathComponent
-                let rightName = URL(fileURLWithPath: rhs.path).lastPathComponent
+                let leftName = (lhs.path as NSString).lastPathComponent
+                let rightName = (rhs.path as NSString).lastPathComponent
                 comparison = leftName.compare(
                     rightName,
                     options: Self.nameComparisonOptions,
@@ -97,6 +99,10 @@ public struct NameSnapshot: Sendable {
             }
             return comparison == (sort.ascendingDirection ? .orderedAscending : .orderedDescending)
         }
+    }
+
+    func hasSameResults(as other: NameSnapshot) -> Bool {
+        isComplete == other.isComplete && sort == other.sort && results == other.results
     }
 
     public func page(after cursor: SnapshotCursor? = nil, pageSize: Int = 50) throws -> SnapshotPage {
@@ -125,6 +131,6 @@ extension FsearchService {
             mode: request.mode, collectAll: maximumResults == nil,
             scopePath: request.scopePath, showsHidden: request.showsHidden, filters: request.filters
         ))
-        return NameSnapshot(response: response, sort: sort)
+        return try NameSnapshot(response: response, sort: sort)
     }
 }
