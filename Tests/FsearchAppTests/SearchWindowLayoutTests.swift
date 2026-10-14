@@ -62,6 +62,30 @@ final class SearchWindowLayoutTests: XCTestCase {
         XCTAssertTrue(model.results.isEmpty)
     }
 
+    func testFileNameTextIsVerticallyCenteredInSearchField() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        model.query = "report"
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let editor = try XCTUnwrap(firstView(of: NSTextView.self, in: host))
+        let layoutManager = try XCTUnwrap(editor.layoutManager)
+        let container = try XCTUnwrap(editor.textContainer)
+        let glyphRange = layoutManager.glyphRange(for: container)
+        let origin = editor.textContainerOrigin
+        let textBounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+            .offsetBy(dx: origin.x, dy: origin.y)
+        XCTAssertEqual(textBounds.midY, editor.bounds.midY, accuracy: 1.0,
+                       "File name text should be vertically centered; text=\(textBounds.midY) field=\(editor.bounds.midY)")
+    }
+
     func testSampleModeCannotOpenContentSearchFromMainWindow() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])

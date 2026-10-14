@@ -127,17 +127,10 @@ struct SearchView: View {
                 SearchQueryEditor(
                     text: $model.configuration.query,
                     focusRequest: model.focusRequest,
+                    placeholder: "输入文件名或名称片段…",
                     onSubmit: model.submit
                 )
                     .frame(minWidth: 280, minHeight: 40, maxHeight: 40)
-                    .overlay(alignment: .topLeading) {
-                        if model.configuration.query.isEmpty {
-                            Text("输入文件名或名称片段…")
-                                .foregroundStyle(.tertiary)
-                                .padding(.leading, 4).padding(.top, 9)
-                                .allowsHitTesting(false)
-                        }
-                    }
                     .padding(.horizontal, 10)
                     .background {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -278,6 +271,7 @@ struct SearchView: View {
 private struct SearchQueryEditor: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: Int
+    let placeholder: String
     let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -287,12 +281,13 @@ private struct SearchQueryEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = NameQueryTextView()
         textView.onSubmit = onSubmit
+        textView.placeholder = placeholder
         textView.isEditable = true
         textView.isSelectable = true
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .preferredFont(forTextStyle: .body)
-        textView.textContainerInset = NSSize(width: 4, height: 9)
+        textView.textContainerInset = NSSize(width: 4, height: 11.5)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -304,7 +299,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         return scrollView
@@ -314,6 +309,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NameQueryTextView else { return }
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
+        textView.placeholder = placeholder
         if textView.string != text {
             textView.string = text
         }
@@ -341,6 +337,44 @@ private struct SearchQueryEditor: NSViewRepresentable {
 
 private final class NameQueryTextView: NSTextView {
     var onSubmit: (() -> Void)?
+    var placeholder = ""
+
+    private var isShowingPlaceholder: Bool {
+        string.isEmpty && window?.firstResponder !== self
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isShowingPlaceholder, !placeholder.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? .preferredFont(forTextStyle: .body),
+            .foregroundColor: NSColor.placeholderTextColor
+        ]
+        let size = (placeholder as NSString).size(withAttributes: attributes)
+        let linePadding = textContainer?.lineFragmentPadding ?? 0
+        let rect = NSRect(x: textContainerInset.width + linePadding,
+                          y: max(0, (bounds.height - size.height) / 2),
+                          width: max(0, bounds.width - textContainerInset.width * 2 - linePadding * 2),
+                          height: size.height)
+        (placeholder as NSString).draw(in: rect, withAttributes: attributes)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        needsDisplay = true
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        needsDisplay = true
+        return result
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        needsDisplay = true
+    }
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.shift, .command, .control, .option])
