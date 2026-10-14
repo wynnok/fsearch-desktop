@@ -29,4 +29,20 @@ final class SearchConfigurationTests: XCTestCase {
         configuration.filters.maximumSize = nil
         XCTAssertEqual(try configuration.request().filters.minimumSize, 100)
     }
+
+    func testActiveFilterCountCountsEnabledSections() {
+        var configuration = SearchConfiguration()
+        XCTAssertEqual(configuration.activeFilterCount, 0)
+        configuration.filters.kind = .file
+        XCTAssertEqual(configuration.activeFilterCount, 1)
+        configuration.filters.extensions = ["txt", "md"]
+        XCTAssertEqual(configuration.activeFilterCount, 2)
+        configuration.filters.minimumSize = 1
+        configuration.filters.maximumSize = 2
+        XCTAssertEqual(configuration.activeFilterCount, 3)
+        configuration.filters.modifiedAfter = 1
+        XCTAssertEqual(configuration.activeFilterCount, 4)
+        configuration.clearFilters()
+        XCTAssertEqual(configuration.activeFilterCount, 0)
+    }
 }

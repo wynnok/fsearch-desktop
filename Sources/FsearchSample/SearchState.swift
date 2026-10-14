@@ -38,6 +38,15 @@ struct SearchConfiguration: Equatable {
         hasQueryInput || filters.isEffective || scope != .allIndexed
     }
 
+    var activeFilterCount: Int {
+        var count = 0
+        if filters.kind != nil { count += 1 }
+        if !filters.extensions.isEmpty { count += 1 }
+        if filters.minimumSize != nil || filters.maximumSize != nil { count += 1 }
+        if filters.modifiedAfter != nil || filters.modifiedBefore != nil { count += 1 }
+        return count
+    }
+
     func request() throws -> NameSearchRequest {
         try filters.validate()
         return NameSearchRequest(query: query, mode: nameMode, scopePath: scope.path,

@@ -7,85 +7,231 @@ struct SearchFiltersView: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Menu {
-                    Button("所有已覆盖内置位置") { configuration.scope = .allIndexed }
-                    Button("个人目录") { configuration.scope = .home }
-                    Button("选择文件夹…", action: chooseFolder)
-                } label: {
-                    Label(scopeLabel, systemImage: "folder")
-                }
-                .accessibilityLabel("搜索范围")
-                .help(scopeHelp)
-                .frame(maxWidth: 250)
-                Toggle("显示隐藏项", isOn: $configuration.showsHidden)
-                    .toggleStyle(.checkbox)
-                Spacer()
-                Button(configuration.filters.isEffective ? "属性筛选 · 已启用" : "属性筛选") { isExpanded.toggle() }
+        HStack(spacing: 12) {
+            Menu {
+                Button("所有已覆盖内置位置") { configuration.scope = .allIndexed }
+                Button("个人目录") { configuration.scope = .home }
+                Button("选择文件夹…", action: chooseFolder)
+            } label: {
+                Label(scopeLabel, systemImage: "folder")
             }
+            .accessibilityLabel("搜索范围")
+            .help(scopeHelp)
+            .frame(maxWidth: 250)
+
+            Toggle("显示隐藏项", isOn: $configuration.showsHidden)
+                .toggleStyle(.checkbox)
+
+            Spacer()
+
+            Button { isExpanded.toggle() } label: {
+                Label(filterButtonTitle, systemImage: filterButtonIcon)
+            }
+            .accessibilityIdentifier("attribute-filter")
         }
         .popover(isPresented: $isExpanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("搜索范围与属性筛选").font(.headline)
-                if case .folder(let path) = configuration.scope {
-                    Text(path).font(.caption).textSelection(.enabled)
-                }
-                if configuration.scope != .allIndexed {
-                    Text("仅筛选现有索引；选择文件夹不会建立索引或取得权限。外接和网络卷未纳入默认内置磁盘覆盖。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                HStack {
-                    Picker("类型", selection: $configuration.filters.kind) {
-                        Text("文件和目录").tag(SearchItemKind?.none)
-                        Text("文件").tag(SearchItemKind?.some(.file))
-                        Text("目录").tag(SearchItemKind?.some(.directory))
-                    }.frame(maxWidth: 230)
-                    Button("清除类型") { configuration.filters.kind = nil }
-                    TextField("扩展名（逗号分隔，如 txt,pdf）", text: extensionBinding)
-                        .accessibilityLabel("扩展名")
-                    Button("清除扩展名") { configuration.filters.extensions = [] }
-                }
-                HStack {
-                    Text("索引大小（字节）")
-                    TextField("最小值", value: $configuration.filters.minimumSize, format: .number)
-                        .accessibilityLabel("最小索引大小")
-                    Text("至")
-                    TextField("最大值", value: $configuration.filters.maximumSize, format: .number)
-                        .accessibilityLabel("最大索引大小")
-                    Button("清除大小") {
-                        configuration.filters.minimumSize = nil
-                        configuration.filters.maximumSize = nil
-                    }
-                }
-                HStack {
-                    Toggle("修改时间从", isOn: enabledBinding(\.modifiedAfter))
-                    if configuration.filters.modifiedAfter != nil {
-                        DatePicker("开始日期", selection: dateBinding(\.modifiedAfter), displayedComponents: [.date, .hourAndMinute])
-                            .labelsHidden().accessibilityLabel("修改时间开始日期")
-                    }
-                    Spacer()
-                }
-                .toggleStyle(.checkbox)
-                HStack {
-                    Toggle("至", isOn: enabledBinding(\.modifiedBefore))
-                    if configuration.filters.modifiedBefore != nil {
-                        DatePicker("结束日期", selection: dateBinding(\.modifiedBefore), displayedComponents: [.date, .hourAndMinute])
-                            .labelsHidden().accessibilityLabel("修改时间结束日期")
-                    }
-                    Button("清除时间") {
-                        configuration.filters.modifiedAfter = nil
-                        configuration.filters.modifiedBefore = nil
-                    }
-                    Spacer()
-                    Button("清除所有属性筛选") { configuration.clearFilters() }
-                        .disabled(!configuration.filters.isEffective)
-                }
-                .toggleStyle(.checkbox)
-                Text("大小以索引记录为准，可能存在精度差异；大小和修改时间包含两端边界。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(16).frame(width: 700)
+            popover
         }
+    }
+
+    private var popover: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("属性筛选").font(.headline)
+                Spacer()
+                Text(configuration.activeFilterCount == 0 ? "未启用条件" : "已启用 \(configuration.activeFilterCount) 项")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 14) {
+                if configuration.scope != .allIndexed {
+                    scopeSummary
+                }
+                fileTypeSection
+                Divider()
+                extensionSection
+                Divider()
+                sizeSection
+                Divider()
+                modifiedTimeSection
+            }
+            .padding(16)
+
+            Divider()
+
+            HStack {
+                Text(configuration.activeFilterCount == 0 ? "未启用筛选" : "已启用 \(configuration.activeFilterCount) 项条件")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("全部清除") { configuration.clearFilters() }
+                    .disabled(configuration.activeFilterCount == 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 560)
+    }
+
+    private var scopeSummary: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scopeLabel)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("仅筛选现有索引；不会建立索引或取得权限。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        }
+    }
+
+    private var fileTypeSection: some View {
+        HStack(spacing: 12) {
+            sectionLabel("文件类型")
+            Picker("文件类型", selection: $configuration.filters.kind) {
+                Text("全部").tag(SearchItemKind?.none)
+                Text("文件").tag(SearchItemKind?.some(.file))
+                Text("文件夹").tag(SearchItemKind?.some(.directory))
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 260)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var extensionSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                sectionLabel("扩展名")
+                TextField("例如 txt, md", text: extensionBinding)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("扩展名")
+                resetButton("清除扩展名",
+                            disabled: configuration.filters.extensions.isEmpty) {
+                    configuration.filters.extensions = []
+                }
+            }
+            Text("多个扩展名用逗号分隔。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 84)
+        }
+    }
+
+    private var sizeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                sectionLabel("文件大小")
+                TextField("最小", value: $configuration.filters.minimumSize, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    .accessibilityLabel("最小文件大小")
+                Text("至")
+                    .foregroundStyle(.secondary)
+                TextField("最大", value: $configuration.filters.maximumSize, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    .accessibilityLabel("最大文件大小")
+                Text("字节")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                resetButton("清除文件大小",
+                            disabled: configuration.filters.minimumSize == nil
+                                && configuration.filters.maximumSize == nil) {
+                    configuration.filters.minimumSize = nil
+                    configuration.filters.maximumSize = nil
+                }
+            }
+            Text("按索引记录筛选；起止值包含边界，较大文件可能有精度差异。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 84)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var modifiedTimeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                sectionLabel("修改时间")
+                Spacer(minLength: 0)
+                resetButton("清除修改时间",
+                            disabled: configuration.filters.modifiedAfter == nil
+                                && configuration.filters.modifiedBefore == nil) {
+                    configuration.filters.modifiedAfter = nil
+                    configuration.filters.modifiedBefore = nil
+                }
+            }
+
+            timeRow(title: "从", key: \.modifiedAfter, accessibilityLabel: "修改时间开始")
+            timeRow(title: "到", key: \.modifiedBefore, accessibilityLabel: "修改时间结束")
+        }
+    }
+
+    private func timeRow(title: String,
+                         key: WritableKeyPath<NameSearchFilters, UInt32?>,
+                         accessibilityLabel: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .frame(width: 28, alignment: .trailing)
+                .foregroundStyle(.secondary)
+            Toggle("", isOn: enabledBinding(key))
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+            if configuration.filters[keyPath: key] == nil {
+                Text("未设置")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 190, alignment: .leading)
+            } else {
+                DatePicker("", selection: dateBinding(key), displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                    .frame(width: 190, alignment: .leading)
+                    .accessibilityLabel(accessibilityLabel)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 84)
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .frame(width: 72, alignment: .leading)
+    }
+
+    private func resetButton(_ help: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button("重置", action: action)
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .foregroundStyle(disabled ? Color.secondary.opacity(0.55) : Color.accentColor)
+            .disabled(disabled)
+            .help(help)
+            .accessibilityLabel(help)
+    }
+
+    private var filterButtonTitle: String {
+        configuration.activeFilterCount == 0 ? "属性筛选" : "属性筛选 · \(configuration.activeFilterCount)"
+    }
+
+    private var filterButtonIcon: String {
+        configuration.activeFilterCount == 0
+            ? "line.3.horizontal.decrease.circle"
+            : "line.3.horizontal.decrease.circle.fill"
     }
 
     private var scopeLabel: String {
