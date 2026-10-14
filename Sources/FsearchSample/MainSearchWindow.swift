@@ -27,6 +27,11 @@ enum SearchSortColumn: String {
     case modified
 }
 
+private enum SearchFooterLayout {
+    // NSPathControl's standard style draws its content inside the control frame.
+    static let contentLeadingInset: CGFloat = 10
+}
+
 struct SearchCommands: Commands {
     @ObservedObject var model: SearchModel
     @ObservedObject var selectionState: SearchSelectionState
@@ -233,9 +238,11 @@ struct SearchView: View {
                 }
                 if let pagination = model.paginationMessage {
                     Text(pagination).font(.caption).foregroundStyle(.secondary)
+                        .padding(.leading, SearchFooterLayout.contentLeadingInset)
                 }
                 if let message = actions.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        .padding(.leading, SearchFooterLayout.contentLeadingInset)
                 }
             }
             .padding(12)
