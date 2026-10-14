@@ -129,11 +129,10 @@ struct ContentSearchView: View {
             .listStyle(.inset(alternatesRowBackgrounds: true))
             .accessibilityLabel("按文件分组的内容结果")
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                PathNavigationView(path: selection, actions: actions)
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    SearchFileActionButtons(path: selection, actions: actions)
-                    Spacer(minLength: 0)
+                    PathNavigationView(path: selection, actions: actions)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button("载入更多") { Task { await state.loadMore() } }.disabled(!state.canLoadMore || state.busy)
                         .accessibilityIdentifier("load-more-content")
                     Button("关闭") { actions.updatePreview(path: nil); dismiss() }.keyboardShortcut(.cancelAction)

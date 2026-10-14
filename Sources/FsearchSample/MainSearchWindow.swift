@@ -221,17 +221,16 @@ struct SearchView: View {
             )
             .frame(minHeight: 250, maxHeight: .infinity)
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                PathNavigationView(path: singleSelectedPath, actions: actions)
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    SearchFileActionButtons(path: singleSelectedPath, actions: actions)
-                    Spacer(minLength: 0)
+                    PathNavigationView(path: singleSelectedPath, actions: actions)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button("载入更多") { model.loadMore() }
                         .disabled(model.nextCursor == nil || model.busy)
                         .accessibilityIdentifier("load-more")
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
                 if let pagination = model.paginationMessage {
                     Text(pagination).font(.caption).foregroundStyle(.secondary)
                 }

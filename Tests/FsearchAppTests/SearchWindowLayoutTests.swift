@@ -132,6 +132,7 @@ final class SearchWindowLayoutTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             let editor = try XCTUnwrap(firstView(of: NSTextView.self, in: host))
             let table = try XCTUnwrap(firstView(of: NSTableView.self, in: host))
+            let path = try XCTUnwrap(firstView(of: NSPathControl.self, in: host))
             let input = try XCTUnwrap(editor.enclosingScrollView)
             let results = try XCTUnwrap(table.enclosingScrollView)
             let visible = window.contentLayoutRect
@@ -144,7 +145,10 @@ final class SearchWindowLayoutTests: XCTestCase {
                                      "The table viewport should fit at \(size)")
             let resultFrame = results.convert(results.bounds, to: nil)
             XCTAssertGreaterThanOrEqual(resultFrame.minY - visible.minY, 60,
-                                        "Path navigation and bottom actions need visible space at \(size)")
+                                        "Path navigation and pagination need visible space at \(size)")
+            let pathFrame = path.convert(path.bounds, to: nil)
+            XCTAssertLessThanOrEqual(pathFrame.minY - visible.minY, 56,
+                                     "A separate file-action row should not extend the footer at \(size)")
         }
     }
 
@@ -168,8 +172,8 @@ final class SearchWindowLayoutTests: XCTestCase {
         XCTAssertTrue(visible.contains(inputFrame), "Content query should fit within the sheet")
         XCTAssertTrue(visible.contains(pathFrame), "Path navigation should fit within the sheet")
         XCTAssertEqual(pathFrame.minX - visible.minX, 12, accuracy: 1)
-        XCTAssertGreaterThanOrEqual(pathFrame.minY - visible.minY, 40,
-                                    "File actions need visible space below the path")
+        XCTAssertLessThanOrEqual(pathFrame.minY - visible.minY, 34,
+                                 "Path, pagination and close controls should share the compact footer")
         XCTAssertGreaterThan(inputFrame.minY - pathFrame.maxY, 250,
                              "Content results should remain the main workspace")
     }
