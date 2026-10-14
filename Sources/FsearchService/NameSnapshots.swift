@@ -51,6 +51,10 @@ public struct NameSnapshot: Sendable {
     public let requestID: String
     public let isComplete: Bool
     public let sort: NameSort
+    private static let nameComparisonOptions: String.CompareOptions = [
+        .numeric, .caseInsensitive, .diacriticInsensitive, .widthInsensitive
+    ]
+    private static let nameComparisonLocale = Locale(identifier: "en_US_POSIX")
     public var loadedCount: Int { results.count }
     public var totalCount: Int? { isComplete ? results.count : nil }
     private let results: [SearchResult]
@@ -72,7 +76,12 @@ public struct NameSnapshot: Sendable {
             case .ascending, .descending:
                 let leftName = URL(fileURLWithPath: lhs.path).lastPathComponent
                 let rightName = URL(fileURLWithPath: rhs.path).lastPathComponent
-                comparison = leftName.localizedStandardCompare(rightName)
+                comparison = leftName.compare(
+                    rightName,
+                    options: Self.nameComparisonOptions,
+                    range: nil,
+                    locale: Self.nameComparisonLocale
+                )
             case .sizeAscending, .sizeDescending:
                 comparison = lhs.indexedSize == rhs.indexedSize ? .orderedSame
                     : lhs.indexedSize < rhs.indexedSize ? .orderedAscending : .orderedDescending
