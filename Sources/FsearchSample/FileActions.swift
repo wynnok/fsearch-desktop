@@ -104,33 +104,55 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
 struct PathNavigationView: View {
     let path: String?
     @ObservedObject var actions: FileActionState
-    private var ancestors: [URL] {
-        guard let path else { return [] }
-        var cursor = URL(fileURLWithPath: path).deletingLastPathComponent()
-        var values = [cursor]
-        while cursor.path != "/" {
-            cursor.deleteLastPathComponent()
-            values.append(cursor)
-        }
-        return values.reversed()
-    }
+
     var body: some View {
-        HStack {
-            if let path {
-                Menu {
-                    ForEach(ancestors, id: \.path) { url in
-                        Button(url.path) { actions.open(path: url.path) }
-                    }
-                } label: {
-                    Label(URL(fileURLWithPath: path).deletingLastPathComponent().path, systemImage: "folder")
-                        .lineLimit(1).truncationMode(.middle)
-                }
-                .help("打开任一级祖先文件夹")
-                Button("复制路径") { actions.copy(path: path) }
-            } else { Text("选择结果以查看路径").foregroundStyle(.secondary) }
-            Spacer()
+        PathBreadcrumbs(path: path, actions: actions)
+            .padding(.horizontal, 10).frame(height: 30)
+    }
+}
+
+private struct PathBreadcrumbs: NSViewRepresentable {
+    let path: String?
+    let actions: FileActionState
+
+    func makeCoordinator() -> Coordinator { Coordinator(actions: actions) }
+
+    func makeNSView(context: Context) -> NSPathControl {
+        let control = NSPathControl()
+        control.pathStyle = .standard
+        control.isEditable = false
+        control.backgroundColor = .clear
+        control.controlSize = .small
+        control.placeholderString = "选择结果以查看路径"
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setAccessibilityLabel("所选文件路径")
+        control.setAccessibilityIdentifier("path-navigation")
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.openFolder(_:))
+        return control
+    }
+
+    func updateNSView(_ control: NSPathControl, context: Context) {
+        context.coordinator.actions = actions
+        let url = path.map { URL(fileURLWithPath: $0) }
+        if control.url != url { control.url = url }
+        control.toolTip = path
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var actions: FileActionState
+
+        init(actions: FileActionState) { self.actions = actions }
+
+        @objc func openFolder(_ sender: NSPathControl) {
+            guard let url = sender.clickedPathItem?.url else { return }
+            if url == sender.url {
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else { return }
+            }
+            actions.open(path: url.path)
         }
-        .font(.caption).padding(.horizontal, 10).frame(height: 30)
-        .accessibilityIdentifier("path-navigation")
     }
 }

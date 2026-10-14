@@ -104,8 +104,6 @@ struct SearchView: View {
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
                 SearchQueryEditor(
                     text: $model.configuration.query,
                     focusRequest: model.focusRequest
@@ -124,14 +122,13 @@ struct SearchView: View {
                             .stroke(Color.secondary.opacity(0.35))
                     }
 
-                Button("查询") { model.submit() }
+                Button { model.submit() } label: {
+                    Label("查询", systemImage: "magnifyingglass")
+                }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityIdentifier("submit-search")
-                Button("刷新") { model.refresh() }
-                    .help("按当前条件重新获取搜索结果")
-                    .disabled(model.busy)
                 if model.busy {
                     Button("取消") { model.cancel() }
                 }

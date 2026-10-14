@@ -5,12 +5,13 @@ import Quartz
 @MainActor
 enum NativeFileActionsSmoke {
     static func run(window: NSWindow, selectionState: SearchSelectionState) async throws -> [String: Bool] {
-        func findTable(_ view: NSView) -> NonAnimatingTableView? {
-            if let table = view as? NonAnimatingTableView { return table }
-            for child in view.subviews { if let table = findTable(child) { return table } }
+        func findView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
+            if let match = view as? T { return match }
+            for child in view.subviews { if let match = findView(of: type, in: child) { return match } }
             return nil
         }
-        guard let root = window.contentView, let table = findTable(root), table.numberOfRows >= 2,
+        guard let root = window.contentView, let table = findView(of: NonAnimatingTableView.self, in: root), table.numberOfRows >= 2,
+              let pathBar = findView(of: NSPathControl.self, in: root),
               let actions = table.previewController else {
             throw FsearchError.bridge("文件动作冒烟需要真实窗口及至少两个受控结果")
         }
@@ -50,6 +51,36 @@ enum NativeFileActionsSmoke {
         }
         // Confirms the native request; Finder's visible selection needs separate UI observation.
         checks["finderNativeRequestTarget"] = actions.revealedURL == first
+        let folder = first.deletingLastPathComponent()
+        func folderElement(in element: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
+            if element.accessibilityURL()?.path == folder.path
+                || element.accessibilityTitle() == folder.lastPathComponent
+                || (element as? NSPathComponentCell)?.url?.path == folder.path { return element }
+            for child in (element.accessibilityChildren() ?? []).compactMap({ $0 as? NSAccessibilityProtocol }) {
+                if let match = folderElement(in: child) { return match }
+            }
+            return nil
+        }
+        guard let folderElement = folderElement(in: pathBar) else {
+            throw FsearchError.bridge("路径栏的父文件夹不可访问")
+        }
+        let folderFrame = folderElement.accessibilityFrame()
+        let location = window.convertPoint(fromScreen: NSPoint(x: folderFrame.midX, y: folderFrame.midY))
+        guard let down = NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+              let up = NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: [],
+                                         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                         context: nil, eventNumber: 1, clickCount: 1, pressure: 0) else {
+            throw FsearchError.bridge("无法创建路径栏单击事件")
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.postEvent(up, atStart: true)
+        pathBar.mouseDown(with: down)
+        for _ in 0..<100 where actions.openedURL != folder {
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        checks["pathFolderSingleClickTarget"] = actions.openedURL == folder
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(table)
         table.keyDown(with: try event(49, " "))
@@ -83,6 +114,7 @@ enum NativeFileActionsSmoke {
         table.selectRowIndexes(IndexSet(integersIn: 0..<2), byExtendingSelection: false)
         try await Task.sleep(for: .milliseconds(100))
         checks["multiSelectionPreserved"] = selectionState.selectedPaths.count == 2
+        checks["multiSelectionClearsPath"] = pathBar.url == nil && pathBar.pathItems.isEmpty
         table.keyDown(with: try event(36, "\r"))
         checks["multiActionExplained"] = actions.message?.contains("请选择单个") == true
         table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
