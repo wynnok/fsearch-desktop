@@ -3,7 +3,7 @@ name: Unsigned pre-release
 on:
   push:
     tags:
-      - "v*-unsigned*"
+      - "v[0-9]*.[0-9]*.[0-9]*-unsigned*"
 
 permissions:
   contents: read
@@ -21,7 +21,6 @@ jobs:
       contents: write
     env:
       FSEARCH_DEV_RUST_VERSION: "1.99.0"
-      FSEARCH_DEV_VERSION: "0.1.0"
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Check out exact revision
@@ -52,6 +51,12 @@ jobs:
       - name: Verify approved upstream pin
         run: bash scripts/check-upstream-pin.sh
 
+      - name: Derive application version from tag
+        run: |
+          set -euo pipefail
+          version="$(bash scripts/unsigned-release-version.sh "$RELEASE_TAG")"
+          printf 'FSEARCH_DEV_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
       - name: Check
         run: bash scripts/dev.sh check
 
@@ -70,7 +75,11 @@ jobs:
           bash scripts/package-arch-dmg.sh x86_64
 
       - name: Verify unsigned release notes
-        run: test -s "docs/releases/$RELEASE_TAG.md"
+        run: |
+          set -euo pipefail
+          version="$(bash scripts/unsigned-release-version.sh "$RELEASE_TAG")"
+          test -s "docs/releases/$RELEASE_TAG.md"
+          grep -Fq "应用内版本为 \`$version\`" "docs/releases/$RELEASE_TAG.md"
 
       - name: Create unsigned GitHub pre-release
         env:
