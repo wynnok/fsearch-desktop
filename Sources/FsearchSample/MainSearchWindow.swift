@@ -129,26 +129,34 @@ struct SearchView: View {
                     focusRequest: model.focusRequest,
                     onSubmit: model.submit
                 )
-                    .frame(minWidth: 280, minHeight: 44, maxHeight: 44)
+                    .frame(minWidth: 280, minHeight: 40, maxHeight: 40)
                     .overlay(alignment: .topLeading) {
                         if model.configuration.query.isEmpty {
                             Text("输入文件名或名称片段…")
                                 .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 6).padding(.top, 6)
+                                .padding(.leading, 4).padding(.top, 9)
                                 .allowsHitTesting(false)
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .background {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color(nsColor: .textBackgroundColor))
+                    }
                     .overlay {
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(Color.secondary.opacity(0.35))
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     }
 
                 Button { model.submit() } label: {
                     Label("查询文件名", systemImage: "magnifyingglass")
                 }
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.roundedRectangle)
                     .controlSize(.large)
+                    .frame(minHeight: 40, maxHeight: 40)
                     .keyboardShortcut(.return, modifiers: .command)
+                    .help("执行文件名搜索")
                     .accessibilityIdentifier("submit-search")
                 if model.busy {
                     Button("取消") { model.cancel() }
@@ -284,7 +292,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .preferredFont(forTextStyle: .body)
-        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.textContainerInset = NSSize(width: 4, height: 9)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
