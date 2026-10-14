@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   build-sign:
+    if: ${{ !endsWith(github.ref_name, '-unsigned') }}
     runs-on: macos-14
     environment: release
     timeout-minutes: 120
@@ -23,6 +24,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Select Xcode 16+
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          [[ -n "$XCODE_APP" ]] || { echo "Xcode 16+ is required for Swift 6" >&2; exit 1; }
+          sudo xcode-select -s "$XCODE_APP"
+          swift --version
       - name: Verify maintainer acceptance bound to tag and commit
         env:
           RELEASE_APPROVAL_JSON: ${{ vars.RELEASE_APPROVAL_JSON }}
@@ -79,6 +87,7 @@ jobs:
 
   publish:
     needs: build-sign
+    if: ${{ !endsWith(github.ref_name, '-unsigned') }}
     runs-on: macos-14
     permissions:
       contents: write

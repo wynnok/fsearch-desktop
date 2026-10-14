@@ -1,0 +1,85 @@
+name: Unsigned pre-release
+
+on:
+  push:
+    tags:
+      - "v*-unsigned"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unsigned-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Build, verify and publish unsigned pre-release
+    runs-on: macos-14
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      FSEARCH_DEV_RUST_VERSION: "1.99.0"
+      FSEARCH_DEV_VERSION: "0.1.0"
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 16+
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
+          [[ -n "$XCODE_APP" ]] || { echo "Xcode 16+ is required for Swift 6" >&2; exit 1; }
+          sudo xcode-select -s "$XCODE_APP"
+          swift --version
+
+      - name: Prepare pinned project-local Rust toolchain
+        run: |
+          set -euo pipefail
+          export RUSTUP_HOME="$PWD/.build/rustup-home"
+          mkdir -p "$RUSTUP_HOME"
+          rustup toolchain install "$FSEARCH_DEV_RUST_VERSION" \
+            --profile minimal --no-self-update \
+            --target aarch64-apple-darwin,x86_64-apple-darwin
+          printf '%s\n' "$FSEARCH_DEV_RUST_VERSION" > "$RUSTUP_HOME/toolchain-version"
+          ACTUAL="$(RUSTUP_TOOLCHAIN="$FSEARCH_DEV_RUST_VERSION" rustc -V | awk '{print $2}')"
+          [[ "$ACTUAL" == "$FSEARCH_DEV_RUST_VERSION" ]]
+
+      - name: Verify approved upstream pin
+        run: bash scripts/check-upstream-pin.sh
+
+      - name: Check
+        run: bash scripts/dev.sh check
+
+      - name: Test
+        run: bash scripts/dev.sh test
+
+      - name: Package development DMG
+        run: bash scripts/package-dev-dmg.sh
+
+      - name: Verify package and installed application
+        run: bash scripts/verify-dev-dmg.sh --dmg .build/dev-dmg/output/*.dmg
+
+      - name: Verify unsigned release notes
+        run: test -s "docs/releases/$RELEASE_TAG.md"
+
+      - name: Create unsigned GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "$RELEASE_TAG (unsigned)" \
+            --notes-file "docs/releases/$RELEASE_TAG.md" \
+            .build/dev-dmg/output/*.dmg \
+            .build/dev-dmg/output/SHA256SUMS \
+            .build/dev-dmg/output/build-manifest.txt \
+            .build/dev-dmg/output/THIRD-PARTY-NOTICES.txt \
+            .build/dev-dmg/verification/verification-report.txt

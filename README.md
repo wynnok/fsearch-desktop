@@ -6,8 +6,8 @@
 
 ![Fsearch Desktop 主窗口：文件名搜索、结果列表与检查器](docs/images/main-window.png)
 
-> **当前版本：0.1.0，开发验证版，尚未正式发布。**
-> 仓库还没有可供下载的正式安装包；默认开发包处于**样本验证模式**，只搜索内置的受控样本，不会索引你的个人磁盘。未验证项见[支持状态与已知限制](docs/product/support-status.md)。
+> **当前版本：v0.1.0-unsigned，未签名预发布版。**
+> [Releases](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.0-unsigned) 提供未签名、未公证的 Universal DMG；macOS 首次启动可能阻止运行，需要按说明手动放行。正式签名版尚未发布。默认包处于**样本验证模式**，只搜索内置的受控样本，不会索引你的个人磁盘。未验证项见[支持状态与已知限制](docs/product/support-status.md)。
 
 ## 主要功能
 
@@ -23,7 +23,9 @@
 
 ## 快速开始
 
-**正式版**：尚未发布。发布后可从 [Releases](https://github.com/wynnok/fsearch-desktop/releases) 下载。
+**未签名预发布版**：从 [v0.1.0-unsigned Release](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.0-unsigned) 下载 Universal DMG。该版本没有 Developer ID 签名，也没有经过 Apple 公证，首次启动通常需要在“系统设置 → 隐私与安全性”中手动放行。完整说明见 [v0.1.0-unsigned 发布说明](docs/releases/v0.1.0-unsigned.md)。
+
+**正式版**：尚未发布。正式版仍以 Developer ID 签名、Apple 公证和完整发行验收为门禁。
 
 **开发验证版**：需要 macOS 13+、Xcode 命令行工具与 Rust 工具链（`cargo`）。依赖、构建缓存和索引都留在项目目录内，不安装全局包，也不改动系统环境。
 
@@ -40,6 +42,17 @@ bash scripts/dev.sh check        # 编译与类型检查
 bash scripts/dev.sh test         # 运行测试
 bash scripts/package-dev-dmg.sh  # 打包开发 DMG
 ```
+
+## 未签名预发布版
+
+`v0.1.0-unsigned` 是给早期测试者使用的 Pre-release，不是稳定版：
+
+- 未使用 Developer ID Application 签名，未提交 Apple 公证。
+- 下载后 macOS Gatekeeper 可能提示“无法验证开发者”或阻止启动。
+- macOS 13/14 可尝试右键“打开”，或在“系统设置 → 隐私与安全性”中选择“仍要打开”。
+- macOS 15 及以后通常需要在“系统设置 → 隐私与安全性”中手动放行，右键绕过可能不可用。
+- 公司或学校管理的 Mac 可能禁止运行未公证应用。
+- 不要为了运行来源不明的软件而关闭系统安全保护。
 
 ## 使用要点
 
@@ -70,7 +83,7 @@ bash scripts/package-dev-dmg.sh  # 打包开发 DMG
 - 支持目标为 macOS 13+、Apple Silicon 与 Intel，但 Intel 与 macOS 13 实机尚未验证。
 - 外接盘与网络卷不在首版默认覆盖范围内；索引大小可能存在精度差异，目录大小不做递归汇总。
 - 应用当前不提供移动、删除、重命名等文件管理操作。
-- 开发包未经过 Developer ID 签名与公证，不要为此关闭系统安全保护。
+- 当前 `v0.1.0-unsigned` 未签名、未公证，macOS 可能阻止启动；请按 Release 说明手动放行，不要关闭系统安全保护。
 
 完整支持矩阵与未验证项见[支持状态与已知限制](docs/product/support-status.md)。
 
