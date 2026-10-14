@@ -1038,6 +1038,29 @@ final class SearchModel: ObservableObject {
         )
         try require(menuTitles.contains("导出诊断报告…"), "Diagnostic export action is unavailable")
 
+        let originalFrame = window.frame
+        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        for (name, size) in [("layout-minimum", NSSize(width: 960, height: 620)),
+                             ("layout-default", NSSize(width: 1100, height: 720))] {
+            window.setContentSize(size)
+            try await Task.sleep(for: .milliseconds(200))
+            root.layoutSubtreeIfNeeded()
+            guard let input = editor.enclosingScrollView, let results = table.enclosingScrollView else {
+                throw FsearchError.bridge("Native search controls unavailable")
+            }
+            let visible = window.contentLayoutRect
+            let resultFrame = results.convert(results.bounds, to: nil)
+            try require(visible.contains(input.convert(input.bounds, to: nil)), "Native search input is clipped")
+            try require(visible.contains(resultFrame) && resultFrame.height >= 250,
+                        "Native results workspace is clipped or too small")
+            try require(resultFrame.minY - visible.minY >= 60, "Native bottom actions are clipped")
+            try require(table.tableColumns.reduce(0) { $0 + $1.width } <= results.contentSize.width + 1,
+                        "Native result columns require horizontal scrolling")
+            try require(table.bounds.width <= results.contentSize.width + 1, "Native table viewport is clipped")
+            try await capture(name, under: output)
+        }
+        window.setFrame(originalFrame, display: true)
+
         requestSearchFocus()
         for _ in 0..<50 where window.firstResponder !== editor {
             try await Task.sleep(for: .milliseconds(20))
@@ -1210,6 +1233,8 @@ struct FsearchSampleApp: App {
                     ContentSearchView(state: model.contentSearch)
                 }
         }
+        .defaultSize(width: 1100, height: 720)
+        .windowResizability(.contentMinSize)
         .commands {
             SearchCommands(model: model, selectionState: model.selectionState)
             ApplicationCommands(showUpdates: { model.showsUpdates = true })

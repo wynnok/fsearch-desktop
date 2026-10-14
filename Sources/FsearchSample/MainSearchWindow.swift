@@ -62,6 +62,7 @@ private struct InspectorRequestID: Hashable {
 struct SearchView: View {
     @StateObject private var inspector = FileInspectorState()
     @StateObject private var actions = FileActionState()
+    @State private var showsIndexDetails = false
     @ObservedObject var model: SearchModel
     @ObservedObject var selectionState: SearchSelectionState
 
@@ -71,25 +72,19 @@ struct SearchView: View {
             Divider()
             HSplitView {
                 resultsPane
-                    .frame(minWidth: 520, idealWidth: 700)
+                    .frame(minWidth: 640, idealWidth: 780)
                 if selectionState.isInspectorVisible {
                     FileInspectorView(result: model.selectedResult, state: inspector)
-                        .frame(minWidth: 240, idealWidth: 300)
+                        .frame(minWidth: 240, idealWidth: 280, maxWidth: 320)
                 }
             }
+            .frame(maxHeight: .infinity)
+            .layoutPriority(1)
         }
         .frame(minWidth: 960, minHeight: 620)
         .background(Color(nsColor: .windowBackgroundColor))
         .toolbar {
             ToolbarItemGroup {
-                Button {
-                    model.requestSearchFocus()
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .help("聚焦搜索")
-                .accessibilityLabel("聚焦搜索")
-
                 Button {
                     selectionState.toggleInspector()
                 } label: {
@@ -107,38 +102,42 @@ struct SearchView: View {
     }
 
     private var configuration: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(model.isEngineMode ? "真实 Engine" : "样本验证")
-                    .font(.headline)
-                Text(model.isEngineMode
-                     ? "独立索引；就绪不代表全盘覆盖"
-                     : "仅查询指定样本目录；未启动真实 Engine")
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                Spacer()
-                Text("引擎 \(model.engineVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            SearchFiltersView(configuration: $model.configuration)
-            PermissionStatusView(state: model.permissionStatus, onRecheck: model.recheckPermissions)
-            if let message = model.applicationMessage {
-                Text(message).font(.caption).foregroundStyle(.secondary)
-            }
-
-            HStack(alignment: .top, spacing: 10) {
                 SearchQueryEditor(
                     text: $model.configuration.query,
                     focusRequest: model.focusRequest
                 )
-                    .frame(minWidth: 280, minHeight: 48, maxHeight: 48)
+                    .frame(minWidth: 280, minHeight: 44, maxHeight: 44)
+                    .overlay(alignment: .topLeading) {
+                        if model.configuration.query.isEmpty {
+                            Text("输入文件名…")
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 6).padding(.top, 6)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .overlay {
                         RoundedRectangle(cornerRadius: 5)
                             .stroke(Color.secondary.opacity(0.35))
                     }
 
+                Button("查询") { model.submit() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .accessibilityIdentifier("submit-search")
+                Button("刷新") { model.refresh() }
+                    .help("按当前条件重新获取搜索结果")
+                    .disabled(model.busy)
+                if model.busy {
+                    Button("取消") { model.cancel() }
+                }
+            }
+
+            HStack(spacing: 12) {
                 Picker("名称匹配方式", selection: $model.configuration.nameMode) {
                     Text("包含").tag(NameMatchMode.contains)
                     Text("模糊").tag(NameMatchMode.fuzzy)
@@ -147,23 +146,38 @@ struct SearchView: View {
                     Text("完整").tag(NameMatchMode.wholeName)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 360)
+                .labelsHidden()
+                .frame(width: 300)
+                .accessibilityLabel("名称匹配方式")
                 .accessibilityIdentifier("name-mode")
+                SearchFiltersView(configuration: $model.configuration)
+            }
 
-                Button("查询") { model.submit() }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .accessibilityIdentifier("submit-search")
-                Button("刷新") { model.refresh() }
-                    .disabled(model.busy)
-                if model.busy {
-                    Button("取消") { model.cancel() }
-                }
+            HStack(spacing: 8) {
+                Text(model.isEngineMode ? "独立索引" : "样本验证 · 仅覆盖样本目录")
+                    .foregroundStyle(.secondary)
+                IndexStatusSummary(state: model.permissionStatus)
+                Spacer()
+                Button("权限与索引…") { showsIndexDetails = true }
+                    .popover(isPresented: $showsIndexDetails) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("权限与索引").font(.headline)
+                            PermissionStatusView(state: model.permissionStatus, onRecheck: model.recheckPermissions)
+                            Text("引擎 \(model.engineVersion)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(16).frame(width: 440)
+                    }
+            }
+            .font(.caption)
+
+            PermissionOnboardingBanner(state: model.permissionStatus)
+            if let message = model.applicationMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
                 if model.busy {
-                    ProgressView()
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 }
                 Text(model.message)
                     .foregroundStyle(statusColor)
@@ -193,6 +207,7 @@ struct SearchView: View {
                 onSort: model.sortBy,
                 actions: actions
             )
+            .frame(minHeight: 250, maxHeight: .infinity)
             Divider()
             PathNavigationView(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil, actions: actions)
             if let message = actions.message {
@@ -373,6 +388,7 @@ private struct ResultsTableView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let table = NonAnimatingTableView()
+        table.autoresizingMask = [.width]
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
         table.target = context.coordinator
@@ -402,7 +418,7 @@ private struct ResultsTableView: NSViewRepresentable {
             identifier: "name",
             title: "名称",
             width: 260,
-            minWidth: 170,
+            minWidth: 150,
             sortKey: SearchSortColumn.name.rawValue
         )
         addColumn(
@@ -410,7 +426,7 @@ private struct ResultsTableView: NSViewRepresentable {
             identifier: "location",
             title: "位置",
             width: 420,
-            minWidth: 220,
+            minWidth: 180,
             sortKey: nil
         )
         addColumn(
@@ -418,7 +434,7 @@ private struct ResultsTableView: NSViewRepresentable {
             identifier: "size",
             title: "索引大小",
             width: 110,
-            minWidth: 90,
+            minWidth: 80,
             sortKey: SearchSortColumn.size.rawValue
         )
         addColumn(
@@ -426,12 +442,13 @@ private struct ResultsTableView: NSViewRepresentable {
             identifier: "modified",
             title: "修改时间",
             width: 180,
-            minWidth: 150,
+            minWidth: 130,
             sortKey: SearchSortColumn.modified.rawValue
         )
 
         let scrollView = NSScrollView()
         scrollView.documentView = table
+        table.sizeToFit()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true

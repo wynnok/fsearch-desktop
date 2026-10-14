@@ -100,3 +100,35 @@ struct PermissionStatusView: View {
         .accessibilityIdentifier("permission-index-status")
     }
 }
+
+struct IndexStatusSummary: View {
+    @ObservedObject var state: PermissionStatusModel
+
+    var body: some View {
+        Label(state.failureMessage ?? "\(state.nameMessage) · \(state.coverageMessage)",
+              systemImage: state.failureMessage == nil ? "info.circle" : "exclamationmark.triangle")
+            .foregroundStyle(state.failureMessage == nil ? Color.secondary : Color.red)
+            .lineLimit(1)
+            .help(state.failureMessage ?? state.coverageMessage)
+            .accessibilityIdentifier("index-status-summary")
+    }
+}
+
+struct PermissionOnboardingBanner: View {
+    @ObservedObject var state: PermissionStatusModel
+
+    var body: some View {
+        if state.showOnboarding {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield").foregroundStyle(.secondary)
+                Text("完全磁盘访问可改善受保护位置的索引覆盖。可在“权限与索引”中查看说明，或先搜索已有覆盖。")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("先搜索已有覆盖") { state.skipOnboarding() }
+                    .accessibilityIdentifier("skip-permission-onboarding")
+            }
+            .padding(8)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+}

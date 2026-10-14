@@ -17,19 +17,24 @@ struct SearchFiltersView: View {
                     Label(scopeLabel, systemImage: "folder")
                 }
                 .accessibilityLabel("搜索范围")
+                .help(scopeHelp)
+                .frame(maxWidth: 250)
                 Toggle("显示隐藏项", isOn: $configuration.showsHidden)
                     .toggleStyle(.checkbox)
                 Spacer()
-                Button(isExpanded ? "收起筛选" : "属性筛选") { isExpanded.toggle() }
+                Button(configuration.filters.isEffective ? "属性筛选 · 已启用" : "属性筛选") { isExpanded.toggle() }
             }
-            if case .folder(let path) = configuration.scope {
-                Text(path).font(.caption).textSelection(.enabled)
-            }
-            if configuration.scope != .allIndexed {
-                Text("仅筛选现有索引；选择文件夹不会建立索引或取得权限。外接和网络卷未纳入默认内置磁盘覆盖。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if isExpanded {
+        }
+        .popover(isPresented: $isExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("搜索范围与属性筛选").font(.headline)
+                if case .folder(let path) = configuration.scope {
+                    Text(path).font(.caption).textSelection(.enabled)
+                }
+                if configuration.scope != .allIndexed {
+                    Text("仅筛选现有索引；选择文件夹不会建立索引或取得权限。外接和网络卷未纳入默认内置磁盘覆盖。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Picker("类型", selection: $configuration.filters.kind) {
                         Text("文件和目录").tag(SearchItemKind?.none)
@@ -59,6 +64,10 @@ struct SearchFiltersView: View {
                         DatePicker("开始日期", selection: dateBinding(\.modifiedAfter), displayedComponents: [.date, .hourAndMinute])
                             .labelsHidden().accessibilityLabel("修改时间开始日期")
                     }
+                    Spacer()
+                }
+                .toggleStyle(.checkbox)
+                HStack {
                     Toggle("至", isOn: enabledBinding(\.modifiedBefore))
                     if configuration.filters.modifiedBefore != nil {
                         DatePicker("结束日期", selection: dateBinding(\.modifiedBefore), displayedComponents: [.date, .hourAndMinute])
@@ -75,7 +84,7 @@ struct SearchFiltersView: View {
                 .toggleStyle(.checkbox)
                 Text("大小以索引记录为准，可能存在精度差异；大小和修改时间包含两端边界。")
                     .font(.caption).foregroundStyle(.secondary)
-            }
+            }.padding(16).frame(width: 700)
         }
     }
 
@@ -83,7 +92,15 @@ struct SearchFiltersView: View {
         switch configuration.scope {
         case .allIndexed: "所有已覆盖内置位置"
         case .home: "个人目录"
-        case .folder: "选定文件夹"
+        case .folder(let path): "文件夹：\(URL(fileURLWithPath: path).lastPathComponent)"
+        }
+    }
+
+    private var scopeHelp: String {
+        switch configuration.scope {
+        case .allIndexed: "搜索所有已覆盖内置位置"
+        case .home: "仅筛选现有索引中的个人目录，不会建立索引或取得权限。"
+        case .folder(let path): "\(path)\n仅筛选现有索引，不会建立索引或取得权限。"
         }
     }
 

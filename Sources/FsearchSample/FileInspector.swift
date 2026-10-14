@@ -100,37 +100,39 @@ struct FileInspectorView: View {
     @ObservedObject var state: FileInspectorState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("检查器").font(.headline)
-            if state.selectionCount > 1 {
-                Text("已选择 \(state.selectionCount) 项").font(.headline)
-                row("共有位置", state.commonLocation ?? "未知")
-                Text(state.message).font(.caption).foregroundStyle(.secondary)
-            } else if let result {
-                HStack(alignment: .top) {
-                    if state.path == result.path, let icon = state.details?.icon {
-                        Image(nsImage: icon).resizable().frame(width: 48, height: 48)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("检查器").font(.headline)
+                if state.selectionCount > 1 {
+                    Text("已选择 \(state.selectionCount) 项").font(.headline)
+                    row("共有位置", state.commonLocation ?? "未知")
+                    Text(state.message).font(.caption).foregroundStyle(.secondary)
+                } else if let result {
+                    HStack(alignment: .top) {
+                        if state.path == result.path, let icon = state.details?.icon {
+                            Image(nsImage: icon).resizable().frame(width: 48, height: 48)
+                        }
+                        Text(URL(fileURLWithPath: result.path).lastPathComponent)
+                            .font(.headline).textSelection(.enabled)
                     }
-                    Text(URL(fileURLWithPath: result.path).lastPathComponent)
-                        .font(.headline).textSelection(.enabled)
-                }
-                row("完整路径", result.path)
-                row("索引大小", "\(result.indexedSize) 字节")
-                Text("索引记录可能因精度或文件变化与实际大小不同；实际大小不是磁盘占用。")
-                    .font(.caption).foregroundStyle(.secondary)
-                if state.path == result.path, let details = state.details {
-                    row("类型", details.kind)
-                    row("实际大小", details.size.map { "\($0) 字节" } ?? "未计算（不汇总目录内容）")
-                    row("创建时间", details.created?.formatted() ?? "未知")
-                    row("修改时间", details.modified?.formatted() ?? "未知")
-                } else {
-                    row("索引修改时间", Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted())
-                }
-                Text(state.message).font(.caption).foregroundStyle(.secondary)
-            } else { Text("未选择结果").foregroundStyle(.secondary) }
-            Spacer()
+                    row("完整路径", result.path)
+                    row("索引大小", "\(result.indexedSize) 字节")
+                    Text("索引记录可能因精度或文件变化与实际大小不同；实际大小不是磁盘占用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if state.path == result.path, let details = state.details {
+                        row("类型", details.kind)
+                        row("实际大小", details.size.map { "\($0) 字节" } ?? "未计算（不汇总目录内容）")
+                        row("创建时间", details.created?.formatted() ?? "未知")
+                        row("修改时间", details.modified?.formatted() ?? "未知")
+                    } else {
+                        row("索引修改时间", Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted())
+                    }
+                    Text(state.message).font(.caption).foregroundStyle(.secondary)
+                } else { Text("未选择结果").foregroundStyle(.secondary) }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor))
         .accessibilityIdentifier("inspector")
     }
@@ -139,6 +141,7 @@ struct FileInspectorView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.caption).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
