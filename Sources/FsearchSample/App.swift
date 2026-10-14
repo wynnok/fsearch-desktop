@@ -1176,7 +1176,7 @@ final class SearchModel: ObservableObject {
 
         let originalFrame = window.frame
         table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-        for (name, size) in [("layout-minimum", NSSize(width: 960, height: 620)),
+        for (name, size) in [("layout-minimum", NSSize(width: 960, height: 680)),
                              ("layout-default", NSSize(width: 1100, height: 720))] {
             window.setContentSize(size)
             try await Task.sleep(for: .milliseconds(200))

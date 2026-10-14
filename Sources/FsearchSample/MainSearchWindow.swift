@@ -83,7 +83,7 @@ struct SearchView: View {
             .frame(maxHeight: .infinity)
             .layoutPriority(1)
         }
-        .frame(minWidth: 960, minHeight: 620)
+        .frame(minWidth: 960, maxWidth: .infinity, minHeight: 680, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .toolbar {
             ToolbarItemGroup {
@@ -107,7 +107,7 @@ struct SearchView: View {
     }
 
     private var configuration: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text("文件名搜索").font(.headline)
                 Spacer()
@@ -124,31 +124,16 @@ struct SearchView: View {
             }
 
             HStack(spacing: 10) {
-                SearchQueryEditor(
-                    text: $model.configuration.query,
-                    focusRequest: model.focusRequest,
-                    placeholder: "输入文件名或名称片段…",
-                    onSubmit: model.submit
-                )
-                    .frame(minWidth: 280, minHeight: 40, maxHeight: 40)
-                    .padding(.horizontal, 10)
-                    .background {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color(nsColor: .textBackgroundColor))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                    }
-
-                Button { model.submit() } label: {
-                    Label("查询文件名", systemImage: "magnifyingglass")
+                SearchQueryField {
+                    SearchQueryEditor(
+                        text: $model.configuration.query,
+                        focusRequest: model.focusRequest,
+                        placeholder: "输入文件名或名称片段…",
+                        onSubmit: model.submit
+                    )
                 }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.roundedRectangle)
-                    .controlSize(.large)
-                    .frame(minHeight: 40, maxHeight: 40)
-                    .keyboardShortcut(.return, modifiers: .command)
+
+                SearchSubmitButton(title: "查询文件名", action: model.submit)
                     .help("执行文件名搜索")
                     .accessibilityIdentifier("submit-search")
                 if model.busy {
@@ -161,6 +146,7 @@ struct SearchView: View {
                 .accessibilityIdentifier("name-search-explanation")
 
             HStack(spacing: 12) {
+                Text("匹配方式")
                 Picker("名称匹配方式", selection: $model.configuration.nameMode) {
                     Text("包含").tag(NameMatchMode.contains)
                     Text("模糊").tag(NameMatchMode.fuzzy)
@@ -170,11 +156,13 @@ struct SearchView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 300)
+                .frame(width: 300, alignment: .leading)
                 .accessibilityLabel("名称匹配方式")
                 .accessibilityIdentifier("name-mode")
-                SearchFiltersView(configuration: $model.configuration)
+                Spacer()
             }
+
+            SearchFiltersView(configuration: $model.configuration)
 
             HStack(spacing: 8) {
                 Text(model.isEngineMode ? "独立索引" : "样本验证 · 仅覆盖样本目录")
@@ -219,9 +207,10 @@ struct SearchView: View {
     }
 
     private var resultsPane: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             if let message = model.selectionMessage {
                 Text(message).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
             }
             ResultsTableView(
                 results: model.results,
@@ -232,24 +221,30 @@ struct SearchView: View {
             )
             .frame(minHeight: 250, maxHeight: .infinity)
             Divider()
-            PathNavigationView(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil, actions: actions)
-            if let message = actions.message {
-                Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            HStack {
-                if let pagination = model.paginationMessage {
-                    Text(pagination)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                PathNavigationView(path: singleSelectedPath, actions: actions)
+                HStack(spacing: 8) {
+                    SearchFileActionButtons(path: singleSelectedPath, actions: actions)
+                    Spacer(minLength: 0)
+                    Button("载入更多") { model.loadMore() }
+                        .disabled(model.nextCursor == nil || model.busy)
+                        .accessibilityIdentifier("load-more")
                 }
-                Spacer()
-                Button("载入更多") { model.loadMore() }
-                    .disabled(model.nextCursor == nil || model.busy)
-                    .accessibilityIdentifier("load-more")
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                if let pagination = model.paginationMessage {
+                    Text(pagination).font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = actions.message {
+                    Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
             }
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
+            .padding(12)
         }
+    }
+
+    private var singleSelectedPath: String? {
+        selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil
     }
 
     private var statusColor: Color {
@@ -642,7 +637,11 @@ private struct ResultsTableView: NSViewRepresentable {
                 menu.addItem(item)
                 return item
             }
-            _ = add(url.map { "打开“\($0.lastPathComponent)”" } ?? "打开", "arrow.up.forward.square", #selector(openSelection(_:)))
+            _ = add(SearchFileAction.open.title, SearchFileAction.open.symbol, #selector(openSelection(_:)))
+            _ = add(SearchFileAction.preview.title, SearchFileAction.preview.symbol, #selector(previewSelection(_:)))
+            _ = add(SearchFileAction.reveal.title, SearchFileAction.reveal.symbol, #selector(revealSelection(_:)))
+            _ = add(SearchFileAction.copy.title, SearchFileAction.copy.symbol, #selector(copySelection(_:)))
+            menu.addItem(.separator())
             let openWith = add("打开方式", "arrow.up.forward.square", #selector(openSelection(_:)))
             let applications = NSMenu()
             applications.autoenablesItems = false
@@ -667,11 +666,8 @@ private struct ResultsTableView: NSViewRepresentable {
             }
             openWith.submenu = applications
             menu.addItem(.separator())
-            _ = add("在 Finder 中显示", "folder", #selector(revealSelection(_:)))
             _ = add("显示简介", "info.circle", #selector(infoSelection(_:)))
-            _ = add("快速查看", "eye", #selector(previewSelection(_:)))
             _ = add("重命名…", "pencil", #selector(renameSelection(_:)))
-            _ = add("复制路径", "terminal", #selector(copySelection(_:)))
             menu.addItem(.separator())
             _ = add("移到废纸篓", "trash", #selector(trashSelection(_:)))
             _ = add("永久删除…", "trash.slash", #selector(deleteSelection(_:)))

@@ -130,7 +130,7 @@ struct FileInspectorView: View {
                     Text(state.message).font(.caption).foregroundStyle(.secondary)
                 } else { Text("未选择结果").foregroundStyle(.secondary) }
             }
-            .padding(16).frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(12).frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor))

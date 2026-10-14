@@ -38,8 +38,8 @@ enum NativeFileActionsSmoke {
         if let menu = table.menu {
             menu.delegate?.menuNeedsUpdate?(menu)
             let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
-            checks["contextMenuRequestedActions"] = titles == ["打开“\(first.lastPathComponent)”", "打开方式", "在 Finder 中显示",
-                "显示简介", "快速查看", "重命名…", "复制路径", "移到废纸篓", "永久删除…"]
+            checks["contextMenuRequestedActions"] = titles == ["打开", "快速查看", "在 Finder 中显示", "复制路径",
+                "打开方式", "显示简介", "重命名…", "移到废纸篓", "永久删除…"]
             checks["contextMenuIcons"] = menu.items.filter { !$0.isSeparatorItem }.allSatisfy { $0.image != nil }
             checks["openWithListsApplications"] = menu.items.first(where: { $0.title == "打开方式" })?.submenu?.items.isEmpty == false
         }

@@ -17,7 +17,7 @@ struct SearchFiltersView: View {
             }
             .accessibilityLabel("搜索范围")
             .help(scopeHelp)
-            .frame(maxWidth: 250)
+            .frame(maxWidth: 250, alignment: .leading)
 
             Toggle("显示隐藏项", isOn: $configuration.showsHidden)
                 .toggleStyle(.checkbox)

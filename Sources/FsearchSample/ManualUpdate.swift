@@ -101,6 +101,7 @@ struct UpdateView: View {
             HStack {
                 Button("检查更新") { Task { await state.check() } }.disabled(state.phase == .checking)
                 Button("打开 Releases 下载") { state.openDownloads() }
+                Spacer()
                 Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
             }
         }

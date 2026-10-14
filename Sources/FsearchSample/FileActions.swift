@@ -229,7 +229,7 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     }
 
     func togglePreview(path: String?) {
-        guard let panel = QLPreviewPanel.shared() else { message = "系统 Quick Look 不可用"; return }
+        guard let panel = QLPreviewPanel.shared() else { message = "系统快速查看不可用"; return }
         if panel.isVisible { previewURL = nil; panel.order(.out, relativeTo: 0); return }
         guard let url = previewableURL(path: path) else { return }
         previewURL = url
@@ -286,7 +286,15 @@ struct PathNavigationView: View {
 
     var body: some View {
         PathBreadcrumbs(path: path, actions: actions)
-            .padding(.horizontal, 10).frame(height: 30)
+            .opacity(path == nil ? 0 : 1)
+            .overlay(alignment: .leading) {
+                if path == nil {
+                    Text("选择结果以查看路径")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(height: 24)
     }
 }
 

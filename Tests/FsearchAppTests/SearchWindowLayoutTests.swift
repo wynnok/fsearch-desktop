@@ -8,7 +8,7 @@ final class SearchWindowLayoutTests: XCTestCase {
     func testReturnQueriesFileNamesWithoutInsertingNewline() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
@@ -38,7 +38,7 @@ final class SearchWindowLayoutTests: XCTestCase {
     func testShiftReturnPreservesNewlineAsFileNameDataWithoutQuerying() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
@@ -65,7 +65,7 @@ final class SearchWindowLayoutTests: XCTestCase {
     func testFileNameTextIsVerticallyCenteredInSearchField() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
@@ -89,7 +89,7 @@ final class SearchWindowLayoutTests: XCTestCase {
     func testSampleModeCannotOpenContentSearchFromMainWindow() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
@@ -114,7 +114,7 @@ final class SearchWindowLayoutTests: XCTestCase {
     func testSearchControlsAndResultsFitWithoutResizingAfterSearch() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
@@ -123,8 +123,10 @@ final class SearchWindowLayoutTests: XCTestCase {
         defer { window.orderOut(nil) }
         model.query = ".md"
         await model.search()
+        XCTAssertGreaterThanOrEqual(host.fittingSize.height, 680,
+                                    "The minimum window height should leave room for independent footer rows")
 
-        for size in [NSSize(width: 960, height: 620), NSSize(width: 1100, height: 720)] {
+        for size in [NSSize(width: 960, height: 680), NSSize(width: 1100, height: 720)] {
             window.setContentSize(size)
             try await Task.sleep(for: .milliseconds(200))
             host.layoutSubtreeIfNeeded()
@@ -144,6 +146,61 @@ final class SearchWindowLayoutTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(resultFrame.minY - visible.minY, 60,
                                         "Path navigation and bottom actions need visible space at \(size)")
         }
+    }
+
+    func testContentSearchQueryAndFooterFitWithinSheet() async throws {
+        _ = NSApplication.shared
+        let state = ContentSearchState(service: nil)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: ContentSearchView(state: state))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+        let input = try XCTUnwrap(firstView(of: NSTextField.self, in: host))
+        let path = try XCTUnwrap(firstView(of: NSPathControl.self, in: host))
+        let visible = window.contentLayoutRect
+        let inputFrame = input.convert(input.bounds, to: nil)
+        let pathFrame = path.convert(path.bounds, to: nil)
+        XCTAssertTrue(visible.contains(inputFrame), "Content query should fit within the sheet")
+        XCTAssertTrue(visible.contains(pathFrame), "Path navigation should fit within the sheet")
+        XCTAssertEqual(pathFrame.minX - visible.minX, 12, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(pathFrame.minY - visible.minY, 40,
+                                    "File actions need visible space below the path")
+        XCTAssertGreaterThan(inputFrame.minY - pathFrame.maxY, 250,
+                             "Content results should remain the main workspace")
+    }
+
+    func testResultMenuUsesSharedActionNamesAndIconsAndRequiresSingleSelection() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        await model.search()
+        try await Task.sleep(for: .milliseconds(200))
+        let table = try XCTUnwrap(firstView(of: NSTableView.self, in: host))
+        let menu = try XCTUnwrap(table.menu)
+        menu.delegate?.menuNeedsUpdate?(menu)
+        let commonItems = Array(menu.items.prefix(4))
+        XCTAssertEqual(commonItems.map(\.title), ["打开", "快速查看", "在 Finder 中显示", "复制路径"])
+        XCTAssertTrue(commonItems.allSatisfy { $0.image != nil })
+        XCTAssertTrue(commonItems.allSatisfy { !$0.isEnabled })
+
+        let first = try XCTUnwrap(model.results.first)
+        model.selectionState.select(paths: [first.path], primary: first.path)
+        menu.delegate?.menuNeedsUpdate?(menu)
+        XCTAssertTrue(menu.items.prefix(4).allSatisfy(\.isEnabled))
+        model.selectionState.select(paths: Set(model.results.map(\.path)), primary: first.path)
+        menu.delegate?.menuNeedsUpdate?(menu)
+        XCTAssertTrue(menu.items.prefix(4).allSatisfy { !$0.isEnabled })
     }
 
     private func firstView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
