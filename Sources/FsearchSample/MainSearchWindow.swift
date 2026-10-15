@@ -126,7 +126,9 @@ struct SearchView: View {
                 }
                 Button { model.showsContentSearch = true } label: {
                     Label("文本内容搜索…", systemImage: "doc.text.magnifyingglass")
+                        .frame(maxWidth: .infinity)
                 }
+                .frame(width: SearchControlsLayout.actionWidth)
                 .disabled(!model.canSearchContent)
                 .help(model.canSearchContent ? "使用独立输入框搜索文件中的文本" : "样本名称模式不支持正文搜索")
                 .accessibilityIdentifier("content-search")
@@ -142,12 +144,12 @@ struct SearchView: View {
                     )
                 }
 
-                SearchSubmitButton(title: "查询文件名", action: model.submit)
-                    .help("执行文件名搜索")
-                    .accessibilityIdentifier("submit-search")
                 if model.busy {
                     Button("取消") { model.cancel() }
                 }
+                SearchSubmitButton(title: "查询文件名", width: SearchControlsLayout.actionWidth, action: model.submit)
+                    .help("执行文件名搜索")
+                    .accessibilityIdentifier("submit-search")
             }
 
             Text("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
@@ -155,38 +157,45 @@ struct SearchView: View {
                 .accessibilityIdentifier("name-search-explanation")
 
             HStack(spacing: 12) {
-                Text("匹配方式")
-                Picker("名称匹配方式", selection: $model.configuration.nameMode) {
-                    Text("包含").tag(NameMatchMode.contains)
-                    Text("模糊").tag(NameMatchMode.fuzzy)
-                    Text("前缀").tag(NameMatchMode.prefix)
-                    Text("后缀").tag(NameMatchMode.suffix)
-                    Text("完整").tag(NameMatchMode.wholeName)
+                HStack(spacing: 12) {
+                    Text("匹配方式").fixedSize()
+                    Picker("名称匹配方式", selection: $model.configuration.nameMode) {
+                        Text("包含").tag(NameMatchMode.contains)
+                        Text("模糊").tag(NameMatchMode.fuzzy)
+                        Text("前缀").tag(NameMatchMode.prefix)
+                        Text("后缀").tag(NameMatchMode.suffix)
+                        Text("完整").tag(NameMatchMode.wholeName)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("名称匹配方式")
+                    .accessibilityIdentifier("name-mode")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 300, alignment: .leading)
-                .accessibilityLabel("名称匹配方式")
-                .accessibilityIdentifier("name-mode")
+                .frame(width: SearchControlsLayout.nameOptionsWidth)
                 Spacer()
             }
 
-            SearchFiltersView(configuration: $model.configuration)
+            SearchFiltersView(configuration: $model.configuration,
+                              controlsWidth: SearchControlsLayout.nameOptionsWidth,
+                              actionWidth: SearchControlsLayout.actionWidth)
 
             HStack(spacing: 8) {
                 Text(model.isEngineMode ? "独立索引" : "样本验证 · 仅覆盖样本目录")
                     .foregroundStyle(.secondary)
                 IndexStatusSummary(state: model.permissionStatus)
                 Spacer()
-                Button("权限与索引…") { showsIndexDetails = true }
-                    .popover(isPresented: $showsIndexDetails) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("权限与索引").font(.headline)
-                            PermissionStatusView(state: model.permissionStatus, onRecheck: model.recheckPermissions)
-                            Text("引擎 \(model.engineVersion)").font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(16).frame(width: 440)
-                    }
+                Button { showsIndexDetails = true } label: {
+                    Label("权限与索引…", systemImage: "lock.shield")
+                        .frame(maxWidth: .infinity)
+                }
+                .font(.body)
+                .frame(width: SearchControlsLayout.actionWidth)
+                .accessibilityIdentifier("permission-index-details")
+                .popover(isPresented: $showsIndexDetails) {
+                    PermissionStatusView(state: model.permissionStatus, engineVersion: model.engineVersion,
+                                         onRecheck: model.recheckPermissions)
+                }
             }
             .font(.caption)
 

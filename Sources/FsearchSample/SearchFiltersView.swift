@@ -4,29 +4,38 @@ import SwiftUI
 
 struct SearchFiltersView: View {
     @Binding var configuration: SearchConfiguration
+    var controlsWidth: CGFloat? = nil
+    var actionWidth: CGFloat? = nil
     @State private var isExpanded = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Menu {
-                Button("所有已覆盖内置位置") { configuration.scope = .allIndexed }
-                Button("个人目录") { configuration.scope = .home }
-                Button("选择文件夹…", action: chooseFolder)
-            } label: {
-                Label(scopeLabel, systemImage: "folder")
-            }
-            .accessibilityLabel("搜索范围")
-            .help(scopeHelp)
-            .frame(maxWidth: 250, alignment: .leading)
+            HStack(spacing: 12) {
+                Menu {
+                    Button("所有已覆盖内置位置") { configuration.scope = .allIndexed }
+                    Button("个人目录") { configuration.scope = .home }
+                    Button("选择文件夹…", action: chooseFolder)
+                } label: {
+                    Label(scopeLabel, systemImage: "folder")
+                        .frame(maxWidth: controlsWidth == nil ? nil : .infinity, alignment: .leading)
+                }
+                .accessibilityLabel("搜索范围")
+                .help(scopeHelp)
+                .frame(maxWidth: controlsWidth == nil ? 250 : .infinity, alignment: .leading)
 
-            Toggle("显示隐藏项", isOn: $configuration.showsHidden)
-                .toggleStyle(.checkbox)
+                Toggle("显示隐藏项", isOn: $configuration.showsHidden)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+            }
+            .frame(width: controlsWidth, alignment: .leading)
 
             Spacer()
 
             Button { isExpanded.toggle() } label: {
                 Label(filterButtonTitle, systemImage: filterButtonIcon)
+                    .frame(maxWidth: actionWidth == nil ? nil : .infinity)
             }
+            .frame(width: actionWidth)
             .accessibilityIdentifier("attribute-filter")
         }
         .popover(isPresented: $isExpanded) {

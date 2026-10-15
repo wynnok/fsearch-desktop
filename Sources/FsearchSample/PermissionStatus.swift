@@ -88,30 +88,152 @@ final class PermissionStatusModel: ObservableObject {
 
 struct PermissionStatusView: View {
     @ObservedObject var state: PermissionStatusModel
+    let engineVersion: String
     let onRecheck: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("权限与索引", systemImage: "lock.shield")
+                    .font(.system(size: 22, weight: .bold))
+                Text("了解当前搜索能力，管理受保护位置的访问权限。")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(20)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let failure = state.failureMessage {
+                        notice(failure, symbol: "exclamationmark.triangle.fill", color: .red)
+                    }
+                    if state.needsRestart {
+                        notice("授权已变化，请退出并重新打开应用，让索引按新权限扫描。",
+                               symbol: "arrow.clockwise.circle.fill", color: .orange)
+                    } else if let message = state.recheckMessage {
+                        notice(message, symbol: "info.circle.fill", color: .accentColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("当前搜索能力").font(.headline)
+                        VStack(alignment: .leading, spacing: 14) {
+                            statusRow("文件名搜索", symbol: "doc.text.magnifyingglass", message: state.nameMessage)
+                            Divider()
+                            statusRow("文本内容搜索", symbol: "text.magnifyingglass", message: state.contentMessage)
+                        }
+                        .padding(16)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    permissionSection
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("搜索边界", systemImage: "icloud").font(.headline)
+                        Text("云端尚未下载的文件正文可能不可用；应用不会为搜索主动下载它们。")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+            }
+            .frame(maxHeight: 460)
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Text("引擎 \(engineVersion)")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Spacer()
+                Button(action: onRecheck) {
+                    Label(state.isChecking ? "正在检查…" : "重新检查", systemImage: "arrow.clockwise")
+                }
+                .controlSize(.large)
+                .disabled(state.isChecking)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .font(.system(size: 14))
+        .foregroundStyle(.primary)
+        .frame(width: 520)
+        .accessibilityIdentifier("permission-index-status")
+    }
+
+    private var permissionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("完全磁盘访问", systemImage: "externaldrive.badge.checkmark")
+                .font(.headline)
+            Text(state.coverageMessage)
+                .fontWeight(.medium)
+                .fixedSize(horizontal: false, vertical: true)
+            if state.status?.mode == "engine", state.status?.fullDiskAccess == true {
+                DisclosureGroup("权限设置与授权说明") {
+                    permissionInstructions.padding(.top, 10)
+                }
+            } else {
+                permissionInstructions
+            }
             if state.showOnboarding {
-                Text("完全磁盘访问可改善受保护位置的索引覆盖。你可以先跳过，搜索已有覆盖；应用不会自动修改系统权限。")
                 Button("跳过，先搜索已有覆盖") { state.skipOnboarding() }
+                    .buttonStyle(.link)
                     .accessibilityIdentifier("skip-permission-onboarding")
             }
-            Text(state.nameMessage)
-            Text(state.contentMessage)
-            Text(state.coverageMessage)
-            Text("云端尚未下载的文件正文可能不可用；应用不会为搜索主动下载它们。")
-            if let failure = state.failureMessage { Text(failure).foregroundStyle(.red) }
-            if let message = state.recheckMessage { Text(message) }
-            HStack {
-                Button("打开完全磁盘访问设置") { state.openPermissionSettings() }
-                Button("重新检查") { onRecheck() }.disabled(state.isChecking)
-            }
-            Text("在系统设置 → 隐私与安全性 → 完全磁盘访问中添加并启用本应用，然后重新检查；授权变化可能需要退出并重启。")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .accessibilityIdentifier("permission-index-status")
+    }
+
+    private var permissionInstructions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("如需搜索受保护位置，请按以下步骤授权：")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                permissionStep(1, "打开系统设置 → 隐私与安全性 → 完全磁盘访问。")
+                permissionStep(2, "添加并启用 FsearchDesktop。")
+                permissionStep(3, "返回这里重新检查；若提示授权变化，退出并重新打开应用。")
+            }
+            Button { state.openPermissionSettings() } label: {
+                Label("打开完全磁盘访问设置", systemImage: "arrow.up.forward.square")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            Text("应用不会自动修改系统权限。")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func statusRow(_ title: String, symbol: String, message: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 19))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).fontWeight(.semibold)
+                Text(message).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func permissionStep(_ number: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .background(Color.primary.opacity(0.07), in: Circle())
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func notice(_ message: String, symbol: String, color: Color) -> some View {
+        Label {
+            Text(message).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(color)
+        }
+        .fontWeight(.medium)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

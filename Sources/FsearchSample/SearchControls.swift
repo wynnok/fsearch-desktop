@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum SearchControlsLayout {
+    static let actionWidth: CGFloat = 140
+    static let nameOptionsWidth: CGFloat = 364
+}
+
 struct SearchQueryField<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -20,16 +25,18 @@ struct SearchQueryField<Content: View>: View {
 
 struct SearchSubmitButton: View {
     let title: String
+    var width: CGFloat? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: "magnifyingglass")
-                .frame(minWidth: 96, minHeight: 28)
+                .frame(minWidth: 96, maxWidth: width == nil ? nil : .infinity, minHeight: 28)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.roundedRectangle)
         .controlSize(.large)
+        .frame(width: width)
         .keyboardShortcut(.return, modifiers: .command)
     }
 }
