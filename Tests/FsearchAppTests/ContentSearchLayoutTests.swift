@@ -45,8 +45,8 @@ final class ContentSearchLayoutTests: XCTestCase {
         })
         let short = ContentFile(path: "/tmp/short.txt", lines: [ContentLine(line: 7, text: "only match", ranges: [[5, 10]])])
         let actions = FileActionState()
-        let host = NSHostingView(rootView: ContentSearchResultsView(files: [many, short], selection: .constant(many.path),
-                                                                  actions: actions))
+        let host = NSHostingView(rootView: ContentResultsSelectionHost(files: [many, short], selectedPath: many.path,
+                                                                     actions: actions))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 340),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -74,8 +74,13 @@ final class ContentSearchLayoutTests: XCTestCase {
         XCTAssertEqual(listScroll.contentView.bounds.origin, listOrigin,
                        "Browsing a long file must not scroll the file list")
 
-        host.rootView = ContentSearchResultsView(files: [many, short], selection: .constant(short.path), actions: actions)
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(table.selectedRow, 0)
+        table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        for _ in 0..<50 {
+            host.layoutSubtreeIfNeeded()
+            if firstView(of: NSTextView.self, in: host)?.string.contains("only match") == true { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         let replacement = try XCTUnwrap(firstView(of: NSTextView.self, in: host))
         XCTAssertTrue(replacement.string.contains("only match"))
         XCTAssertFalse(replacement.string.contains("match 200"), "Details must follow the selected file")
@@ -115,5 +120,21 @@ final class ContentSearchLayoutTests: XCTestCase {
     private func firstView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
         if let match = view as? T { return match }
         return view.subviews.lazy.compactMap { self.firstView(of: type, in: $0) }.first
+    }
+}
+
+private struct ContentResultsSelectionHost: View {
+    let files: [ContentFile]
+    let actions: FileActionState
+    @State private var selection: String?
+
+    init(files: [ContentFile], selectedPath: String, actions: FileActionState) {
+        self.files = files
+        self.actions = actions
+        _selection = State(initialValue: selectedPath)
+    }
+
+    var body: some View {
+        ContentSearchResultsView(files: files, selection: $selection, actions: actions)
     }
 }
