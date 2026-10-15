@@ -27,11 +27,15 @@ final class ContentSearchState: ObservableObject {
     var message: String { controller.message }
     var canLoadMore: Bool { controller.canLoadMore }
 
-    init(service: FsearchService?) {
-        controller = ContentSearchController { request in
+    convenience init(service: FsearchService?) {
+        self.init(controller: ContentSearchController { request in
             guard let service else { throw FsearchError.query("引擎尚不可用。") }
             return try await service.grep(request)
-        }
+        })
+    }
+
+    init(controller: ContentSearchController) {
+        self.controller = controller
         observation = controller.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -65,7 +69,13 @@ struct ContentSearchView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("文本内容搜索").font(.headline)
+                HStack {
+                    Text("文本内容搜索").font(.system(size: 20, weight: .bold))
+                    Spacer()
+                    Text("Return 查询")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .frame(width: SearchControlsLayout.actionWidth)
+                }
                 HStack(spacing: 10) {
                     SearchQueryField {
                         TextField("输入文件中的文本…", text: $state.pattern)
@@ -75,59 +85,54 @@ struct ContentSearchView: View {
                             .accessibilityIdentifier("content-query")
                             .onSubmit { Task { await state.search() } }
                     }
-                    SearchSubmitButton(title: "查询正文") { Task { await state.search() } }
-                        .disabled(state.busy)
-                        .accessibilityIdentifier("submit-content-search")
+                    SearchSubmitButton(title: "查询正文", width: SearchControlsLayout.actionWidth) {
+                        Task { await state.search() }
+                    }
+                    .disabled(state.busy)
+                    .accessibilityIdentifier("submit-content-search")
                 }
-                Text("仅搜索已纳入索引的文本文件；不解析 PDF、Office、图片或压缩包，云端未下载的正文不可搜索。Return 查询。")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("搜索已收录的文本文件正文。不解析 PDF、Office、图片或压缩包；云端未下载的正文不可搜索。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
-                    Text("匹配方式")
-                    Picker("匹配方式", selection: $state.mode) {
-                        Text("普通文本").tag(ContentPatternMode.literal)
-                        Text("正则表达式").tag(ContentPatternMode.regex)
+                    HStack(spacing: 12) {
+                        Text("匹配方式").fixedSize()
+                        Picker("匹配方式", selection: $state.mode) {
+                            Text("普通文本").tag(ContentPatternMode.literal)
+                            Text("正则表达式").tag(ContentPatternMode.regex)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 240, alignment: .leading)
+                    .frame(width: SearchControlsLayout.nameOptionsWidth)
+                    Spacer(minLength: 12)
+                    Text("大小写").fixedSize()
                     Picker("大小写", selection: $state.caseMode) {
                         Text("智能").tag(ContentCaseMode.smart)
                         Text("区分").tag(ContentCaseMode.sensitive)
                         Text("不区分").tag(ContentCaseMode.insensitive)
                     }
-                    .frame(width: 220)
-                    Spacer(minLength: 0)
+                    .labelsHidden()
+                    .frame(width: SearchControlsLayout.actionWidth)
                 }
-                SearchFiltersView(configuration: $state.configuration)
+                SearchFiltersView(configuration: $state.configuration,
+                                  controlsWidth: SearchControlsLayout.nameOptionsWidth,
+                                  actionWidth: SearchControlsLayout.actionWidth)
                 HStack(spacing: 8) {
                     if state.busy { ProgressView().controlSize(.small) }
-                    Text(state.message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(statusMessage)
+                        .font(.system(size: 13)).foregroundStyle(statusColor)
+                        .lineLimit(2).textSelection(.enabled)
+                        .accessibilityIdentifier("content-query-status")
                     Spacer(minLength: 0)
                 }
             }
             .padding(12)
             Divider()
-            List(selection: $selection) {
-                ForEach(state.files) { file in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(URL(fileURLWithPath: file.path).lastPathComponent)
-                            .font(.headline).lineLimit(1).truncationMode(.middle)
-                        Text((file.path as NSString).deletingLastPathComponent)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        ForEach(Array(file.lines.enumerated()), id: \.offset) { _, line in
-                            Text(highlighted(line)).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                        }
-                    }
-                    .help(file.path)
-                    .tag(file.path)
-                    .contextMenu {
-                        SearchFileActionButtons(path: file.path, actions: actions)
-                    }
-                }
-            }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-            .accessibilityLabel("按文件分组的内容结果")
+            ContentSearchResultsView(files: state.files, selection: $selection, actions: actions)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -147,21 +152,36 @@ struct ContentSearchView: View {
         }
         .frame(width: 760, height: 520)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { selection = state.files.first?.path }
         .onChange(of: selection) { actions.updatePreview(path: $0) }
-        .onChange(of: state.response?.requestID) { _ in selection = nil; actions.updatePreview(path: nil) }
+        .onChange(of: state.response?.requestID) { _ in
+            selection = state.files.first?.path
+            actions.updatePreview(path: nil)
+        }
         .onDisappear { actions.updatePreview(path: nil) }
     }
 
-    private func highlighted(_ line: ContentLine) -> AttributedString {
-        var value = AttributedString("\(line.line): ")
-        var text = AttributedString(line.text)
-        for range in line.nativeRanges {
-            guard let lower = AttributedString.Index(range.lowerBound, within: text),
-                  let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
-            text[lower..<upper].backgroundColor = .yellow
-            text[lower..<upper].foregroundColor = .black
+    private var statusMessage: String {
+        let counts = "已载入 \(state.files.count) 个文件 · \(state.controller.displayedOccurrences) 处匹配"
+        switch state.controller.phase {
+        case .idle, .failed:
+            return state.message
+        case .loading:
+            return state.files.isEmpty ? "正在搜索文本…" : "正在载入更多匹配文件…"
+        case .partial:
+            return "\(counts) · 仍可能有更多结果，可继续载入"
+        case .complete:
+            return "\(counts) · 本次查询已完成"
+        case .stopped:
+            return "\(counts) · 结果可能不完整，可缩小范围后重试"
         }
-        value.append(text)
-        return value
+    }
+
+    private var statusColor: Color {
+        switch state.controller.phase {
+        case .failed: .red
+        case .stopped: .orange
+        default: .secondary
+        }
     }
 }
