@@ -118,16 +118,8 @@ pub unsafe extern "C" fn fsearch_engine_grep(
                 normalized.as_bytes().to_vec()
             });
         }
-        query
-            .scope
-            .get_or_insert_with(|| h.root.as_os_str().as_bytes().to_vec());
-        if query
-            .scope
-            .as_ref()
-            .is_some_and(|p| !Path::new(std::ffi::OsStr::from_bytes(p)).starts_with(&h.root))
-        {
-            return Err("Content search scope is outside the confined fixture");
-        }
+        prepare_scope(&mut query, &h.root)
+            .map_err(|_| "Content search scope is outside the confined fixture")?;
         query.limit = request.limit;
         let mode = match request.mode {
             ContentMode::Literal => fsearch::query::GrepMode::Literal,
@@ -592,16 +584,7 @@ unsafe fn engine_search(
         if query.grep.is_some() {
             return Err("Text content search is not exposed by this validation window".into());
         }
-        if query
-            .scope
-            .as_ref()
-            .is_some_and(|p| !Path::new(std::ffi::OsStr::from_bytes(p)).starts_with(&h.root))
-        {
-            return Err("Query scope is outside the confined fixture".into());
-        }
-        query
-            .scope
-            .get_or_insert_with(|| h.root.as_os_str().as_bytes().to_vec());
+        prepare_scope(&mut query, &h.root)?;
         if matches!(request.mode, SearchMode::Contains | SearchMode::Fuzzy)
             && request.query.trim().is_empty()
             && !request.filters.effective()
@@ -674,5 +657,135 @@ pub unsafe extern "C" fn fsearch_engine_close(handle: *mut c_void) {
         let _ = contained(|| unsafe {
             drop(Box::from_raw(handle.cast::<EngineHandle>()));
         });
+    }
+}
+
+fn prepare_scope(query: &mut fsearch::Query, root: &Path) -> Result<(), &'static str> {
+    let scope = query
+        .scope
+        .get_or_insert_with(|| root.as_os_str().as_bytes().to_vec());
+    let path = if scope.is_empty() {
+        Path::new("/")
+    } else {
+        Path::new(std::ffi::OsStr::from_bytes(scope))
+    };
+    if !path.starts_with(root) {
+        return Err("Query scope is outside the confined fixture");
+    }
+    // Query::parse("in:/") uses an empty prefix: overlay matching appends '/'.
+    if scope == b"/" {
+        scope.clear();
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fsearch::{
+        index::Index,
+        live::{Live, OEnt},
+        query::Searcher,
+        walk::{KIND_DIR, KIND_FILE, Listing, NONE, RawEnt},
+    };
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn root_scope_preserves_base_and_live_overlay_matches() {
+        let base_names = ["bartender-one.plist", "bartender-two.plist"];
+        let mut names = Vec::new();
+        let entries = base_names
+            .iter()
+            .map(|name| {
+                let entry = RawEnt {
+                    name_off: names.len() as u32,
+                    name_len: name.len() as u16,
+                    kind: KIND_FILE,
+                    size: 1,
+                    mtime: 0,
+                    child: NONE,
+                };
+                names.extend_from_slice(name.as_bytes());
+                entry
+            })
+            .collect();
+        let base = Index::build(
+            vec![
+                Listing {
+                    id: 0,
+                    names: b"home".to_vec(),
+                    ents: vec![RawEnt {
+                        name_off: 0,
+                        name_len: 4,
+                        kind: KIND_DIR,
+                        size: 0,
+                        mtime: 0,
+                        child: 1,
+                    }],
+                },
+                Listing {
+                    id: 1,
+                    names,
+                    ents: entries,
+                },
+            ],
+            0,
+            0,
+            b"/home",
+        );
+        let mut live = Live::new(base);
+        let path = b"/home/com.surteesstudios.Bartender.revenuecat".to_vec();
+        let entry = OEnt::new(&path, KIND_DIR, 0, 0);
+        live.over.insert(path.clone(), entry);
+        live.flat.masks.push(entry.mask);
+        live.flat.items.push((path, entry));
+
+        let search = |scope: Option<&str>| {
+            let request: Request = serde_json::from_value(serde_json::json!({
+                "id": "root-regression", "query": "bartender", "mode": "contains",
+                "ordinaryForms": ["bartender"], "limit": 50, "collectAll": true,
+                "scopePath": scope, "showsHidden": true, "filters": { "extensions": [] }
+            }))
+            .unwrap();
+            let mut query = super::super::make_query(&request).unwrap();
+            prepare_scope(&mut query, Path::new("/")).unwrap();
+            Searcher { live: &live }
+                .search(&query)
+                .into_iter()
+                .map(|hit| {
+                    let mut path = Vec::new();
+                    if let Some(over) = hit.over {
+                        path = over;
+                    } else {
+                        live.base.path(hit.idx as usize, &mut path);
+                    }
+                    String::from_utf8(path).unwrap()
+                })
+                .collect::<BTreeSet<_>>()
+        };
+        let expected = BTreeSet::from([
+            "/home/bartender-one.plist".to_string(),
+            "/home/bartender-two.plist".to_string(),
+            "/home/com.surteesstudios.Bartender.revenuecat".to_string(),
+        ]);
+        assert_eq!(search(Some("/home")), expected);
+        assert_eq!(search(Some("/")), expected);
+        assert_eq!(search(None), expected);
+    }
+
+    #[test]
+    fn root_scope_matches_upstream_parser_without_escaping_fixture_confinement() {
+        let parsed = fsearch::Query::parse("in:/", "/home").unwrap();
+        let mut query = fsearch::Query::default();
+        prepare_scope(&mut query, Path::new("/")).unwrap();
+        assert_eq!(query.scope, parsed.scope);
+        prepare_scope(&mut query, Path::new("/")).unwrap();
+        for scope in [b"/".to_vec(), Vec::new(), b"/home-other".to_vec()] {
+            query.scope = Some(scope);
+            assert!(prepare_scope(&mut query, Path::new("/home")).is_err());
+        }
+        query.scope = None;
+        prepare_scope(&mut query, Path::new("/home")).unwrap();
+        assert_eq!(query.scope, Some(b"/home".to_vec()));
     }
 }

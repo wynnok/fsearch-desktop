@@ -46,7 +46,7 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     func open(path: String?) {
         guard let url = accessibleURL(path: path) else { return }
         openedURL = nil
-        NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+        NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) { @Sendable _, error in
             Task { @MainActor in
                 if let error { self.message = "系统无法打开：\(error.localizedDescription)" }
                 else { self.openedURL = url }
@@ -63,7 +63,7 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     func open(path: String?, with application: URL) {
         guard let url = accessibleURL(path: path) else { return }
         openedURL = nil
-        NSWorkspace.shared.open([url], withApplicationAt: application, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+        NSWorkspace.shared.open([url], withApplicationAt: application, configuration: NSWorkspace.OpenConfiguration()) { @Sendable _, error in
             Task { @MainActor in
                 if let error { self.message = "系统无法打开：\(error.localizedDescription)" }
                 else { self.openedURL = url }
