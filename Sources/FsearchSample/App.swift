@@ -1073,8 +1073,17 @@ final class SearchModel: ObservableObject {
             print("Native Engine file mutation selection: passed")
             try await service.saveIndex()
             try await Task.sleep(for: .seconds(2))
-            print("Native Engine query, close, background update, notification, reopen, save and application exit: passed")
-            NSApplication.shared.terminate(nil)
+            print("Native Engine query, close, background update, notification, reopen and save: passed")
+            guard let quit = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                                              timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil,
+                                              characters: "q", charactersIgnoringModifiers: "q",
+                                              isARepeat: false, keyCode: 12),
+                  let menu = NSApplication.shared.mainMenu else {
+                throw FsearchError.bridge("Command-Q event or application menu unavailable")
+            }
+            print("Native Engine Command-Q dispatch")
+            try require(menu.performKeyEquivalent(with: quit), "Application menu did not handle Command-Q")
         } catch {
             fputs("Native Engine smoke failed: \(error.localizedDescription)\n", stderr)
             exit(1)
