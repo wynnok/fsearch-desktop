@@ -41,17 +41,17 @@ final class ManualUpdateState: ObservableObject {
             phase = current.lexicographicallyPrecedes(version)
                 ? .available(version.map(String.init).joined(separator: ".")) : .current
         } catch {
-            phase = .failed("无法检查更新，请稍后重试或打开项目 Releases。")
+            phase = .failed("检查失败，请稍后重试，或前往下载页面查看版本。")
         }
     }
 
     var message: String {
         switch phase {
-        case .idle: "由你从 Releases 下载并手动安装更新。"
-        case .checking: "正在检查正式版本…"
+        case .idle: "更新需从 GitHub 下载后手动安装。"
+        case .checking: "正在检查更新…"
         case .current: "未发现比当前版本更新的正式版本。"
-        case .noRelease: "项目尚无可用的正式 Release。"
-        case .available(let version): "可下载新版本 \(version)，请手动安装。"
+        case .noRelease: "暂无正式版本，可前往下载页面查看预发布版本。"
+        case .available(let version): "发现新版本 \(version)，请下载后手动安装。"
         case .failed(let message): message
         }
     }
@@ -94,18 +94,74 @@ struct UpdateView: View {
     let engineVersion: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("FsearchDesktop \(state.currentVersion)").font(.headline)
-            Text("固定引擎：\(engineVersion)").textSelection(.enabled)
-            Text(state.message)
-            HStack {
-                Button("检查更新") { Task { await state.check() } }.disabled(state.phase == .checking)
-                Button("打开 Releases 下载") { state.openDownloads() }
-                Spacer()
-                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 16) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 64, height: 64)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("FsearchDesktop")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text("版本 \(state.currentVersion)")
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
+            Text("快速查找 Mac 上的文件与文本内容。")
+                .foregroundStyle(.secondary)
+                .padding(.top, 12)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("搜索引擎").fontWeight(.medium)
+                    Spacer()
+                    Text("Fsearch \(engineVersion.components(separatedBy: " / ")[0])")
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                DisclosureGroup("引擎构建信息") {
+                    Text(engineVersion)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 6)
+                }
+                .font(.callout)
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    Text("软件更新").fontWeight(.medium)
+                    if state.phase == .checking {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                Text(state.message)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("检查更新") { Task { await state.check() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(state.phase == .checking)
+                    Button("前往下载", systemImage: "arrow.up.forward.square") { state.openDownloads() }
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.top, 20)
+
+            HStack {
+                Spacer()
+                Button("关闭") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.top, 20)
         }
+        .font(.system(size: 13))
         .padding(24)
-        .frame(width: 430)
+        .frame(width: 440)
     }
 }
