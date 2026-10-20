@@ -1,41 +1,65 @@
 import SwiftUI
 
 enum SearchControlsLayout {
-    static let actionWidth: CGFloat = 140
-    static let nameOptionsWidth: CGFloat = 364
+    static let actionWidth: CGFloat = 132
 }
 
 struct SearchQueryField<Content: View>: View {
+    var symbol = "magnifyingglass"
+    var tint: Color = FDTheme.primary
+    var onClear: (() -> Void)?
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        content
-            .frame(minWidth: 280, minHeight: 40, maxHeight: 40)
-            .padding(.horizontal, 10)
-            .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color(nsColor: .textBackgroundColor))
+        HStack(spacing: 9) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 19)
+
+            content
+
+            if let onClear {
+                Button(action: onClear) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.tertiary)
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .buttonStyle(.plain)
+                .help("清除输入")
+                .accessibilityLabel("清除输入")
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-            }
+        }
+        .padding(.horizontal, 11)
+        .frame(minWidth: 240, minHeight: 40, maxHeight: 40)
+        .background {
+            RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+                .fill(FDTheme.surfaceFill)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+                .strokeBorder(tint.opacity(scheme == .dark ? 0.52 : 0.34), lineWidth: 1)
+        }
     }
 }
 
 struct SearchSubmitButton: View {
     let title: String
     var width: CGFloat? = nil
+    var tint: Color = FDTheme.primary
+    var symbol = "magnifyingglass"
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: "magnifyingglass")
-                .frame(minWidth: 96, maxWidth: width == nil ? nil : .infinity, minHeight: 28)
+            Label(title, systemImage: symbol)
+                .font(.system(size: 12.5, weight: .semibold))
+                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity, minHeight: 26)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.roundedRectangle)
-        .controlSize(.large)
+        .buttonStyle(FDPrimaryButtonStyle(tint: tint))
         .frame(width: width)
         .keyboardShortcut(.return, modifiers: .command)
     }
@@ -62,6 +86,15 @@ enum SearchFileAction: String, CaseIterable {
         }
     }
 
+    var tint: Color {
+        switch self {
+        case .open: FDTheme.slate
+        case .preview: FDTheme.plum
+        case .reveal: FDTheme.ochre
+        case .copy: FDTheme.sage
+        }
+    }
+
     @MainActor
     func perform(path: String?, actions: FileActionState) {
         switch self {
@@ -84,6 +117,36 @@ struct SearchFileActionButtons: View {
             }
             .accessibilityIdentifier("file-action-\(action.rawValue)")
             .disabled(path == nil || actions.isMutating)
+        }
+    }
+}
+
+/// Compact icon-only action strip used by the footer and inspector.
+struct SearchFileActionIconRow: View {
+    let path: String?
+    @ObservedObject var actions: FileActionState
+    var size: CGFloat = 22
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(SearchFileAction.allCases, id: \.self) { action in
+                Button {
+                    action.perform(path: path, actions: actions)
+                } label: {
+                    Image(systemName: action.symbol)
+                        .font(.system(size: size * 0.55, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(path == nil || actions.isMutating
+                                         ? Color.secondary.opacity(0.45) : action.tint)
+                        .frame(width: size, height: size)
+                        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(path == nil || actions.isMutating)
+                .help(action.title)
+                .accessibilityLabel(action.title)
+                .accessibilityIdentifier("file-action-\(action.rawValue)")
+            }
         }
     }
 }

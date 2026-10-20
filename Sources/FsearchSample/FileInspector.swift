@@ -98,50 +98,194 @@ final class FileInspectorState: ObservableObject {
 struct FileInspectorView: View {
     let result: SearchResult?
     @ObservedObject var state: FileInspectorState
+    var path: String?
+    @ObservedObject var actions: FileActionState
+    var onClose: () -> Void
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("检查器").font(.headline)
-                if state.selectionCount > 1 {
-                    Text("已选择 \(state.selectionCount) 项").font(.headline)
-                    row("共有位置", state.commonLocation ?? "未知")
-                    Text(state.message).font(.caption).foregroundStyle(.secondary)
-                } else if let result {
-                    HStack(alignment: .top) {
-                        if state.path == result.path, let icon = state.details?.icon {
-                            Image(nsImage: icon).resizable().frame(width: 48, height: 48)
-                        }
-                        Text(URL(fileURLWithPath: result.path).lastPathComponent)
-                            .font(.headline).textSelection(.enabled)
-                    }
-                    row("完整路径", result.path)
-                    row("索引大小", "\(result.indexedSize) 字节")
-                    Text("索引记录可能因精度或文件变化与实际大小不同；实际大小不是磁盘占用。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if state.path == result.path, let details = state.details {
-                        row("类型", details.kind)
-                        row("实际大小", details.size.map { "\($0) 字节" } ?? "未计算（不汇总目录内容）")
-                        row("创建时间", details.created?.formatted() ?? "未知")
-                        row("修改时间", details.modified?.formatted() ?? "未知")
+        VStack(spacing: 0) {
+            header
+            Divider().overlay(FDTheme.hairlineColor)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if state.selectionCount > 1 {
+                        multiSelection
+                    } else if let result {
+                        singleSelection(result)
                     } else {
-                        row("索引修改时间", Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted())
+                        FDEmptyState(symbol: "cursorarrow",
+                                     title: "未选择结果",
+                                     message: "选择一条结果，查看路径、大小、时间与快捷操作。",
+                                     tint: FDTheme.slate)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 28)
                     }
-                    Text(state.message).font(.caption).foregroundStyle(.secondary)
-                } else { Text("未选择结果").foregroundStyle(.secondary) }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(12).frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(FDTheme.canvas)
+        .tint(FDTheme.primary)
         .accessibilityIdentifier("inspector")
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.caption).textSelection(.enabled)
+    private var header: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(FDTheme.slate)
+            Text("检查器")
+                .font(.system(size: 12.5, weight: .semibold))
+            Spacer()
+            FDActionIconButton(symbol: "xmark",
+                               label: "隐藏检查器",
+                               tint: .secondary,
+                               action: onClose)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func singleSelection(_ result: SearchResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            hero(result)
+
+            SearchFileActionIconRow(path: path ?? result.path, actions: actions, size: 28)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(FDTheme.softFillColor))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
+                .frame(maxWidth: .infinity)
+
+            inspectorCard(title: "位置", symbol: "link", tint: FDTheme.slate) {
+                Text(result.path)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            inspectorCard(title: "索引记录", symbol: "externaldrive", tint: FDTheme.ochre) {
+                metadataRow("索引大小", ByteCountFormatter.string(fromByteCount: Int64(result.indexedSize), countStyle: .file))
+                metadataRow("记录时间", Date(timeIntervalSince1970: TimeInterval(result.modifiedAt)).formatted())
+                Text("索引记录可能因精度或文件变化与实际不同；实际大小不是磁盘占用。")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
+
+            if state.path == result.path, let details = state.details {
+                inspectorCard(title: "实时属性", symbol: "doc.text.magnifyingglass", tint: FDTheme.plum) {
+                    metadataRow("类型", details.kind)
+                    metadataRow("实际大小", details.size.map {
+                        ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+                    } ?? "未计算")
+                    metadataRow("创建时间", details.created?.formatted() ?? "未知")
+                    metadataRow("修改时间", details.modified?.formatted() ?? "未知")
+                }
+            }
+
+            if !state.message.isEmpty {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: state.details == nil ? "clock" : "info.circle")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(state.details == nil ? FDTheme.ochre : FDTheme.olive)
+                    Text(state.message)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func hero(_ result: SearchResult) -> some View {
+        VStack(spacing: 7) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(FDTheme.slate.opacity(scheme == .dark ? 0.18 : 0.09))
+                    .frame(width: 62, height: 62)
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(FDTheme.slate.opacity(0.20), lineWidth: 1))
+                Image(nsImage: state.path == result.path
+                      ? (state.details?.icon ?? NSWorkspace.shared.icon(forFile: result.path))
+                      : NSWorkspace.shared.icon(forFile: result.path))
+                    .resizable()
+                    .frame(width: 38, height: 38)
+            }
+            Text(URL(fileURLWithPath: result.path).lastPathComponent)
+                .font(.system(size: 13.5, weight: .bold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+            Text(state.details?.kind ?? "正在读取属性…")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    private var multiSelection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(spacing: 7) {
+                FDIconTile(symbol: "square.stack.3d.up.fill", tint: FDTheme.sage, size: 46)
+                Text("已选择 \(state.selectionCount) 项")
+                    .font(.system(size: 13.5, weight: .bold))
+                Text("多选模式下不虚构汇总大小")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+
+            inspectorCard(title: "共有位置", symbol: "folder", tint: FDTheme.ochre) {
+                Text(state.commonLocation ?? "未知")
+                    .font(.system(size: 10.5))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !state.message.isEmpty {
+                FDNoticeBanner(text: state.message, symbol: "info.circle.fill", tint: FDTheme.ochre)
+            }
+        }
+    }
+
+    private func inspectorCard<Content: View>(
+        title: String,
+        symbol: String,
+        tint: Color,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        FDCard(padding: 10, tint: tint) {
+            VStack(alignment: .leading, spacing: 6) {
+                FDSectionLabel(title: title, symbol: symbol, tint: tint)
+                content()
+            }
+        }
+    }
+
+    private func metadataRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .leading)
+            Text(value)
+                .font(.system(size: 10.5))
+                .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

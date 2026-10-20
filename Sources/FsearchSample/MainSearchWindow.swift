@@ -42,21 +42,22 @@ struct SearchCommands: Commands {
 
     var body: some Commands {
         CommandMenu("搜索") {
-            Button("聚焦搜索") { model.requestSearchFocus() }
+            Button("聚焦搜索", systemImage: "magnifyingglass") { model.requestSearchFocus() }
                 .keyboardShortcut("f", modifiers: .command)
-            Button("查询") { model.submit() }
+            Button("查询", systemImage: "text.magnifyingglass") { model.submit() }
                 .keyboardShortcut(.return, modifiers: .command)
-            Button("刷新") { model.refresh() }
+            Button("刷新", systemImage: "arrow.clockwise") { model.refresh() }
                 .keyboardShortcut("r", modifiers: .command)
-            Button("权限与索引重新检查") { model.recheckPermissions() }
-            Button("导出诊断报告…") { model.exportDiagnostics() }
-            Button("文本内容搜索…") { model.showsContentSearch = true }
+            Button("权限与索引重新检查", systemImage: "lock.shield") { model.recheckPermissions() }
+            Button("导出诊断报告…", systemImage: "square.and.arrow.up") { model.exportDiagnostics() }
+            Button("文本内容搜索…", systemImage: "text.magnifyingglass") { model.showsContentSearch = true }
                 .disabled(!model.canSearchContent)
-            Button("取消") { model.cancel() }
+            Button("取消", systemImage: "xmark.circle") { model.cancel() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(!model.busy)
             Divider()
-            Button(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器") {
+            Button(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器",
+                   systemImage: "sidebar.right") {
                 selectionState.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
@@ -79,63 +80,100 @@ struct SearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            configuration
-            Divider()
+            header
+            Divider().overlay(FDTheme.hairlineColor)
             HSplitView {
                 resultsPane
-                    .frame(minWidth: 640, idealWidth: 780)
+                    .frame(minWidth: 620, idealWidth: 780)
                 if selectionState.isInspectorVisible {
-                    FileInspectorView(result: model.selectedResult, state: inspector)
-                        .frame(minWidth: 240, idealWidth: 280, maxWidth: 320)
+                    FileInspectorView(result: model.selectedResult,
+                                      state: inspector,
+                                      path: singleSelectedPath,
+                                      actions: actions,
+                                      onClose: selectionState.toggleInspector)
+                        .frame(minWidth: 252, idealWidth: 292, maxWidth: 336)
                 }
             }
             .frame(maxHeight: .infinity)
             .layoutPriority(1)
         }
         .frame(minWidth: 960, maxWidth: .infinity, minHeight: 680, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background { FDAuroraBackground() }
+        .tint(FDTheme.primary)
         .toolbar {
             ToolbarItemGroup {
                 Button {
                     selectionState.toggleInspector()
                 } label: {
-                    Image(systemName: "sidebar.right")
+                    Image(systemName: selectionState.isInspectorVisible ? "sidebar.right" : "sidebar.left")
                 }
                 .help(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
                 .accessibilityLabel(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
+                .tint(FDTheme.primary)
             }
         }
         .task {
             actions.onFileMutation = model.fileDidChange
             await model.runSmokeIfRequested()
         }
-        .task(id: InspectorRequestID(snapshot: model.inspectorRefreshID, paths: selectionState.selectedPaths, primary: selectionState.selectedPath)) {
+        .task(id: InspectorRequestID(snapshot: model.inspectorRefreshID,
+                                     paths: selectionState.selectedPaths,
+                                     primary: selectionState.selectedPath)) {
             actions.updatePreview(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil)
             await inspector.select(paths: selectionState.selectedPaths, primary: selectionState.selectedPath)
         }
     }
 
-    private var configuration: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
-                Text("文件名搜索").font(.headline)
-                Spacer()
-                if !model.canSearchContent {
-                    Text("当前模式仅支持文件名搜索")
-                        .font(.caption).foregroundStyle(.secondary)
+                FDBrandMark(size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Fsearch")
+                        .font(.system(size: 17, weight: .bold))
+                    Text(model.isEngineMode ? "本机文件搜索" : "样本验证 · 仅受控样本")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
-                Button { model.showsContentSearch = true } label: {
-                    Label("文本内容搜索…", systemImage: "doc.text.magnifyingglass")
-                        .frame(maxWidth: .infinity)
+                Spacer(minLength: 12)
+
+                IndexStatusSummary(state: model.permissionStatus)
+
+                Button {
+                    showsIndexDetails = true
+                } label: {
+                    Label("权限与索引", systemImage: "lock.shield")
+                        .font(.system(size: 11.5, weight: .medium))
                 }
-                .frame(width: SearchControlsLayout.actionWidth)
+                .buttonStyle(FDSecondaryButtonStyle())
+                .accessibilityIdentifier("permission-index-details")
+                .popover(isPresented: $showsIndexDetails) {
+                    PermissionStatusView(state: model.permissionStatus,
+                                         engineVersion: model.engineVersion,
+                                         onRecheck: model.recheckPermissions)
+                }
+
+                Button {
+                    model.showsContentSearch = true
+                } label: {
+                    Label("文本内容搜索", systemImage: "text.magnifyingglass")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(FDSecondaryButtonStyle())
                 .disabled(!model.canSearchContent)
-                .help(model.canSearchContent ? "使用独立输入框搜索文件中的文本" : "样本名称模式不支持正文搜索")
+                .help(model.canSearchContent ? "在文件正文中搜索文本" : "样本名称模式不支持正文搜索")
                 .accessibilityIdentifier("content-search")
             }
 
             HStack(spacing: 10) {
-                SearchQueryField {
+                SearchQueryField(
+                    symbol: "magnifyingglass",
+                    tint: FDTheme.slate,
+                    onClear: model.configuration.query.isEmpty
+                        ? nil : { model.configuration.query = "" }
+                ) {
                     SearchQueryEditor(
                         text: $model.configuration.query,
                         focusRequest: model.focusRequest,
@@ -145,121 +183,273 @@ struct SearchView: View {
                 }
 
                 if model.busy {
-                    Button("取消") { model.cancel() }
+                    Button {
+                        model.cancel()
+                    } label: {
+                        Label("取消", systemImage: "xmark")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(FDSecondaryButtonStyle())
+                    .help("取消当前查询")
                 }
-                SearchSubmitButton(title: "查询文件名", width: SearchControlsLayout.actionWidth, action: model.submit)
+
+                SearchSubmitButton(title: "查询文件名",
+                                   width: SearchControlsLayout.actionWidth,
+                                   action: model.submit)
                     .help("执行文件名搜索")
                     .accessibilityIdentifier("submit-search")
             }
 
-            Text("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
-                .font(.caption).foregroundStyle(.secondary)
-                .accessibilityIdentifier("name-search-explanation")
-
-            HStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    Text("匹配方式").fixedSize()
-                    Picker("名称匹配方式", selection: $model.configuration.nameMode) {
-                        Text("包含").tag(NameMatchMode.contains)
-                        Text("模糊").tag(NameMatchMode.fuzzy)
-                        Text("前缀").tag(NameMatchMode.prefix)
-                        Text("后缀").tag(NameMatchMode.suffix)
-                        Text("完整").tag(NameMatchMode.wholeName)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel("名称匹配方式")
-                    .accessibilityIdentifier("name-mode")
-                }
-                .frame(width: SearchControlsLayout.nameOptionsWidth)
-                Spacer()
-            }
-
-            SearchFiltersView(configuration: $model.configuration,
-                              controlsWidth: SearchControlsLayout.nameOptionsWidth,
-                              actionWidth: SearchControlsLayout.actionWidth)
-
-            HStack(spacing: 8) {
-                Text(model.isEngineMode ? "独立索引" : "样本验证 · 仅覆盖样本目录")
+            HStack(spacing: 5) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                Text("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
-                IndexStatusSummary(state: model.permissionStatus)
-                Spacer()
-                Button { showsIndexDetails = true } label: {
-                    Label("权限与索引…", systemImage: "lock.shield")
-                        .frame(maxWidth: .infinity)
-                }
-                .font(.body)
-                .frame(width: SearchControlsLayout.actionWidth)
-                .accessibilityIdentifier("permission-index-details")
-                .popover(isPresented: $showsIndexDetails) {
-                    PermissionStatusView(state: model.permissionStatus, engineVersion: model.engineVersion,
-                                         onRecheck: model.recheckPermissions)
-                }
             }
-            .font(.caption)
+            .accessibilityIdentifier("name-search-explanation")
 
-            PermissionOnboardingBanner(state: model.permissionStatus)
+            controlBar
+
+            if model.permissionStatus.showOnboarding {
+                PermissionOnboardingBanner(state: model.permissionStatus)
+            }
             if let message = model.applicationMessage {
-                Text(message).font(.caption).foregroundStyle(.secondary)
+                FDNoticeBanner(text: message, symbol: "exclamationmark.circle.fill", tint: FDTheme.clay)
             }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 11)
+        .background(FDHeaderBackground(accent: FDTheme.slate))
+    }
 
+    private var controlBar: some View {
+        HStack(spacing: 9) {
+            SearchScopeMenu(configuration: $model.configuration)
+
+            controlDivider
+
+            FDSegmentedPicker(
+                options: matchModeOptions,
+                selection: $model.configuration.nameMode,
+                accessibilityLabel: "名称匹配方式"
+            )
+            .accessibilityIdentifier("name-mode")
+
+            controlDivider
+
+            SearchHiddenToggle(configuration: $model.configuration)
+
+            Spacer(minLength: 8)
+
+            SearchFiltersView(configuration: $model.configuration)
+        }
+    }
+
+    private var controlDivider: some View {
+        Rectangle()
+            .fill(FDTheme.hairlineColor)
+            .frame(width: 1, height: 17)
+    }
+
+    private var matchModeOptions: [FDSegmentedOption<NameMatchMode>] {
+        [
+            .init(value: .contains, title: "包含", symbol: "text.magnifyingglass", tint: FDTheme.slate),
+            .init(value: .fuzzy, title: "模糊", symbol: "shuffle", tint: FDTheme.slate),
+            .init(value: .prefix, title: "前缀", symbol: "arrow.right.to.line", tint: FDTheme.slate),
+            .init(value: .suffix, title: "后缀", symbol: "arrow.left.to.line", tint: FDTheme.slate),
+            .init(value: .wholeName, title: "完整", symbol: "equal.circle", tint: FDTheme.slate)
+        ]
+    }
+
+    // MARK: Results
+
+    private var resultsPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            resultsHeader
+            if let message = model.selectionMessage {
+                FDNoticeBanner(text: message,
+                               symbol: "exclamationmark.circle.fill",
+                               tint: FDTheme.ochre)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
+            ZStack {
+                ResultsTableView(
+                    results: model.results,
+                    selectionState: selectionState,
+                    sort: model.sort,
+                    onSort: model.sortBy,
+                    actions: actions
+                )
+                .frame(minHeight: 250, maxHeight: .infinity)
+
+                if model.results.isEmpty {
+                    resultsPlaceholder
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(FDTheme.surfaceFill)
+                        .allowsHitTesting(false)
+                }
+            }
+            Divider().overlay(FDTheme.hairlineColor)
+            resultsFooter
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(FDTheme.surfaceFill)
+    }
+
+    private var resultsHeader: some View {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
+                Rectangle()
+                    .fill(FDTheme.slate)
+                    .frame(width: 3, height: 12)
+                Text("搜索结果")
+                    .font(.system(size: 12.5, weight: .semibold))
+                if !model.results.isEmpty {
+                    FDCountBadge(text: "\(model.results.count)", tint: FDTheme.slate)
+                }
+                Spacer(minLength: 8)
+                sortChip
+            }
+            HStack(alignment: .top, spacing: 6) {
                 if model.busy {
-                    ProgressView().controlSize(.small)
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(statusColor)
+                        .padding(.top, 1)
+                } else {
+                    Image(systemName: statusSymbol)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                        .symbolRenderingMode(.hierarchical)
+                        .padding(.top, 1)
                 }
                 Text(model.message)
+                    .font(.system(size: 10.5))
                     .foregroundStyle(statusColor)
+                    .lineLimit(2)
                     .textSelection(.enabled)
                     .accessibilityLabel("搜索状态")
                     .accessibilityValue(model.message)
                     .accessibilityIdentifier("query-status")
-                Spacer()
-                Text("排序：\(model.sortTitle)")
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("current-sort")
+                Spacer(minLength: 0)
             }
-            .font(.caption)
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
-    private var resultsPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let message = model.selectionMessage {
-                Text(message).font(.caption).foregroundStyle(.secondary)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
+    @ViewBuilder
+    private var resultsPlaceholder: some View {
+        if model.busy {
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.regular)
+                    .tint(FDTheme.primary)
+                Text(model.activity == .sorting ? "正在整理排序…" : "正在搜索…")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
             }
-            ResultsTableView(
-                results: model.results,
-                selectionState: selectionState,
-                sort: model.sort,
-                onSort: model.sortBy,
-                actions: actions
-            )
-            .frame(minHeight: 250, maxHeight: .infinity)
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    PathNavigationView(path: singleSelectedPath, actions: actions)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("载入更多") { model.loadMore() }
-                        .disabled(model.nextCursor == nil || model.busy)
-                        .accessibilityIdentifier("load-more")
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                }
-                if let pagination = model.paginationMessage {
-                    Text(pagination).font(.caption).foregroundStyle(.secondary)
-                        .padding(.leading, footerTextLeadingInset)
-                }
-                if let message = actions.message {
-                    Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                        .padding(.leading, footerTextLeadingInset)
-                }
+        } else {
+            switch model.statusKind {
+            case .error:
+                FDEmptyState(symbol: "exclamationmark.triangle.fill",
+                             title: "查询失败",
+                             message: "修正条件后再试一次；旧结果不代表当前筛选。",
+                             tint: FDTheme.clay)
+            case .noMatch:
+                FDEmptyState(symbol: "magnifyingglass",
+                             title: "没有找到匹配文件",
+                             message: "试试缩短关键词、切换匹配方式，或放宽属性筛选。",
+                             tint: FDTheme.ochre,
+                             hints: [("Return", "重新查询"), ("⌘F", "聚焦搜索")])
+            case .cancelled:
+                FDEmptyState(symbol: "pause.circle",
+                             title: "查询已取消",
+                             message: "可以调整关键词后重新查询。",
+                             tint: FDTheme.stone)
+            default:
+                FDEmptyState(symbol: "doc.text.magnifyingglass",
+                             title: "从一次搜索开始",
+                             message: "输入文件名后按 Return，结果会出现在这里。",
+                             tint: FDTheme.slate,
+                             hints: [("⌘F", "聚焦搜索"), ("⌘R", "刷新")])
             }
-            .padding(12)
         }
+    }
+
+    private var sortChip: some View {
+        HStack(spacing: 5) {
+            Image(systemName: model.sort == .relevance ? "text.magnifyingglass" : "arrow.up.arrow.down")
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(FDTheme.ochre)
+            Text(model.sortTitle)
+                .font(.system(size: 10.5, weight: .medium))
+                .monospacedDigit()
+            Image(systemName: sortDirectionSymbol)
+                .font(.system(size: 8.5, weight: .bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(FDTheme.ochre.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .strokeBorder(FDTheme.ochre.opacity(0.18), lineWidth: 1))
+        .help("点击结果列标题可切换排序")
+        .accessibilityIdentifier("current-sort")
+    }
+
+    private var sortDirectionSymbol: String {
+        switch model.sort {
+        case .ascending, .sizeAscending, .modifiedAscending: "arrow.up"
+        case .relevance: "text.magnifyingglass"
+        default: "arrow.down"
+        }
+    }
+
+    private var resultsFooter: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                PathNavigationView(path: singleSelectedPath, actions: actions)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                SearchFileActionIconRow(path: singleSelectedPath, actions: actions, size: 24)
+
+                Rectangle()
+                    .fill(FDTheme.hairlineColor)
+                    .frame(width: 1, height: 16)
+
+                Button {
+                    model.loadMore()
+                } label: {
+                    Label("载入更多", systemImage: "arrow.down.circle")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .disabled(model.nextCursor == nil || model.busy)
+                .accessibilityIdentifier("load-more")
+                .buttonStyle(FDSecondaryButtonStyle())
+            }
+            if let pagination = model.paginationMessage {
+                Text(pagination)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, footerTextLeadingInset)
+            }
+            if let message = actions.message {
+                Text(message)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.leading, footerTextLeadingInset)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(minHeight: 62, alignment: .top)
+        .background(FDTheme.surfaceFill)
     }
 
     private var footerTextLeadingInset: CGFloat {
@@ -273,15 +463,28 @@ struct SearchView: View {
     private var statusColor: Color {
         switch model.statusKind {
         case .error:
-            return .red
+            return FDTheme.clay
         case .partial, .sorting:
-            return .orange
+            return FDTheme.ochre
         case .querying:
-            return .blue
+            return FDTheme.slate
         case .complete:
-            return .primary
+            return FDTheme.olive
         case .prompt, .cancelled, .noMatch:
             return .secondary
+        }
+    }
+
+    private var statusSymbol: String {
+        switch model.statusKind {
+        case .error: "exclamationmark.triangle.fill"
+        case .partial: "circle.lefthalf.filled"
+        case .sorting: "arrow.up.arrow.down"
+        case .querying: "magnifyingglass"
+        case .complete: "checkmark.circle.fill"
+        case .noMatch: "questionmark.circle"
+        case .cancelled: "pause.circle"
+        case .prompt: "info.circle"
         }
     }
 }
@@ -305,6 +508,8 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.font = .preferredFont(forTextStyle: .body)
+        textView.insertionPointColor = FDTheme.primaryNSColor
+        textView.selectedTextAttributes = [.backgroundColor: FDTheme.selectionNSColor]
         textView.textContainerInset = NSSize(width: 4, height: 11.5)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -410,6 +615,24 @@ private final class NameQueryTextView: NSTextView {
     }
 }
 
+final class FDTableRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        FDTheme.selectionNSColor.setFill()
+        NSBezierPath(rect: bounds).fill()
+    }
+}
+
+final class FDTableHeaderCell: NSTableHeaderCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        FDTheme.headerNSColor.setFill()
+        cellFrame.fill()
+        FDTheme.hairlineNSColor.setFill()
+        NSRect(x: cellFrame.minX, y: cellFrame.maxY - 1, width: cellFrame.width, height: 1).fill()
+        drawInterior(withFrame: cellFrame, in: controlView)
+    }
+}
+
 final class NonAnimatingTableView: NSTableView {
     var openSelection: (() -> Void)?
     var previewSelection: (() -> Void)?
@@ -493,7 +716,10 @@ private struct ResultsTableView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let table = NonAnimatingTableView()
         table.autoresizingMask = [.width]
-        table.usesAlternatingRowBackgroundColors = true
+        table.usesAlternatingRowBackgroundColors = false
+        table.backgroundColor = FDTheme.surfaceNSColor
+        table.rowHeight = 30
+        table.intercellSpacing = NSSize(width: 0, height: 1)
         table.allowsMultipleSelection = true
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.openSelection)
@@ -552,6 +778,8 @@ private struct ResultsTableView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = FDTheme.surfaceNSColor
         return scrollView
     }
 
@@ -620,7 +848,11 @@ private struct ResultsTableView: NSViewRepresentable {
         sortKey: String?
     ) {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
-        column.title = title
+        let header = FDTableHeaderCell(textCell: title)
+        header.alignment = .left
+        header.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        header.textColor = .secondaryLabelColor
+        column.headerCell = header
         column.width = width
         column.minWidth = minWidth
         if let sortKey {
@@ -765,6 +997,10 @@ private struct ResultsTableView: NSViewRepresentable {
             parent.results.count
         }
 
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            FDTableRowView()
+        }
+
         func tableView(
             _ tableView: NSTableView,
             viewFor tableColumn: NSTableColumn?,
@@ -772,7 +1008,8 @@ private struct ResultsTableView: NSViewRepresentable {
         ) -> NSView? {
             guard row >= 0, row < parent.results.count, let tableColumn else { return nil }
             let result = parent.results[row]
-            let identifier = NSUserInterfaceItemIdentifier("result-cell")
+            let isName = tableColumn.identifier.rawValue == "name"
+            let identifier = NSUserInterfaceItemIdentifier(isName ? "result-name-cell" : "result-text-cell")
             let cell: NSTableCellView
             if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
                 cell = reused
@@ -783,13 +1020,34 @@ private struct ResultsTableView: NSViewRepresentable {
                 textField.translatesAutoresizingMaskIntoConstraints = false
                 textField.lineBreakMode = .byTruncatingMiddle
                 textField.maximumNumberOfLines = 1
+                textField.font = isName
+                    ? .systemFont(ofSize: 12.5, weight: .medium)
+                    : .systemFont(ofSize: 11.5)
                 cell.addSubview(textField)
                 cell.textField = textField
-                NSLayoutConstraint.activate([
-                    textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                    textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                    textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-                ])
+
+                if isName {
+                    let imageView = NSImageView()
+                    imageView.translatesAutoresizingMaskIntoConstraints = false
+                    imageView.imageScaling = .scaleProportionallyDown
+                    cell.addSubview(imageView)
+                    cell.imageView = imageView
+                    NSLayoutConstraint.activate([
+                        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 7),
+                        imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        imageView.widthAnchor.constraint(equalToConstant: 17),
+                        imageView.heightAnchor.constraint(equalToConstant: 17),
+                        textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 7),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -5),
+                        textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                    ])
+                } else {
+                    NSLayoutConstraint.activate([
+                        textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -5),
+                        textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                    ])
+                }
             }
 
             switch tableColumn.identifier.rawValue {
@@ -806,6 +1064,9 @@ private struct ResultsTableView: NSViewRepresentable {
                 ).formatted()
             default:
                 cell.textField?.stringValue = (result.path as NSString).lastPathComponent
+                let icon = NSWorkspace.shared.icon(forFile: result.path)
+                icon.size = NSSize(width: 17, height: 17)
+                cell.imageView?.image = icon
             }
             cell.textField?.toolTip = result.path
             return cell

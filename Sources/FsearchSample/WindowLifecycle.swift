@@ -43,11 +43,11 @@ struct ApplicationCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("关于 FsearchDesktop…", action: showUpdates)
-            Button("检查更新…", action: showUpdates)
+            Button("关于 FsearchDesktop…", systemImage: "info.circle", action: showUpdates)
+            Button("检查更新…", systemImage: "arrow.triangle.2.circlepath", action: showUpdates)
         }
         CommandGroup(after: .windowArrangement) {
-            Button("重新打开搜索窗口") { MainWindowLifecycle.shared.reopen() }
+            Button("重新打开搜索窗口", systemImage: "macwindow") { MainWindowLifecycle.shared.reopen() }
                 .keyboardShortcut("0", modifiers: .command)
         }
     }

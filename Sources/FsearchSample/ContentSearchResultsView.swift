@@ -8,94 +8,150 @@ struct ContentSearchResultsView: View {
     @ObservedObject var actions: FileActionState
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             fileList
-                .frame(minWidth: 240, idealWidth: 300, maxWidth: 320)
+                .frame(width: 284)
+            Rectangle()
+                .fill(FDTheme.hairlineColor)
+                .frame(width: 1)
             matchDetails
-                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(FDTheme.surfaceFill)
+        .tint(FDTheme.primary)
         .accessibilityIdentifier("content-results")
     }
 
     private var fileList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("匹配文件").font(.headline)
+            HStack(spacing: 7) {
+                FDSectionLabel(title: "匹配文件", symbol: "doc.on.doc", tint: FDTheme.plum)
                 Spacer()
-                Text("已载入 \(files.count) 个").font(.system(size: 12)).foregroundStyle(.secondary)
+                FDCountBadge(text: "\(files.count)", tint: FDTheme.plum)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            Divider()
+            .padding(.vertical, 8)
+            Divider().overlay(FDTheme.hairlineColor)
+
             List(selection: $selection) {
                 ForEach(files) { file in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(URL(fileURLWithPath: file.path).lastPathComponent)
-                                .font(.system(size: 14, weight: .semibold))
-                                .lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength: 0)
-                            Text("\(file.lines.count) 行")
-                                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize()
+                    row(for: file)
+                        .tag(file.path)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7))
+                        .listRowBackground(Color.clear)
+                        .contextMenu {
+                            SearchFileActionButtons(path: file.path, actions: actions)
                         }
-                        Text((file.path as NSString).deletingLastPathComponent)
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
-                        if let line = file.lines.first {
-                            Text(AttributedString(highlightedContent(line)))
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1).truncationMode(.tail)
-                        }
-                    }
-                    .frame(height: 64)
-                    .help(file.path)
-                    .tag(file.path)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
-                    .contextMenu {
-                        SearchFileActionButtons(path: file.path, actions: actions)
-                    }
                 }
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(FDTheme.canvas)
             .accessibilityLabel("匹配文件")
             .accessibilityIdentifier("content-file-list")
             .overlay {
                 if files.isEmpty {
-                    Text("暂无匹配文件").font(.system(size: 14)).foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        FDIconTile(symbol: "text.magnifyingglass", tint: FDTheme.plum, size: 38)
+                        Text("暂无匹配文件")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("输入正文内容后按 Return")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .allowsHitTesting(false)
                 }
             }
         }
+        .background(FDTheme.canvas)
+    }
+
+    private func row(for file: ContentFile) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            Rectangle()
+                .fill(selection == file.path ? FDTheme.plum : Color.clear)
+                .frame(width: 2, height: 52)
+
+            Image(nsImage: fileIcon(file.path))
+                .resizable()
+                .frame(width: 19, height: 19)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(URL(fileURLWithPath: file.path).lastPathComponent)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    FDCountBadge(text: "\(file.lines.count) 行", tint: FDTheme.plum)
+                }
+                Text((file.path as NSString).deletingLastPathComponent)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let line = file.lines.first {
+                    Text(AttributedString(highlightedContent(line)))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+        .frame(height: 60, alignment: .top)
+        .help(file.path)
     }
 
     @ViewBuilder
     private var matchDetails: some View {
         if let file = files.first(where: { $0.path == selection }) {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("内容匹配").font(.headline)
-                    Text(URL(fileURLWithPath: file.path).lastPathComponent)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1).truncationMode(.middle)
-                    Text("已载入 \(file.lines.count) 个匹配行 · 可选择并复制文本")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                HStack(spacing: 9) {
+                    Image(nsImage: fileIcon(file.path))
+                        .resizable()
+                        .frame(width: 27, height: 27)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(URL(fileURLWithPath: file.path).lastPathComponent)
+                            .font(.system(size: 12.5, weight: .bold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text((file.path as NSString).deletingLastPathComponent)
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 6)
+                    FDCountBadge(text: "\(file.lines.count) 处匹配", tint: FDTheme.plum)
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
                 .help(file.path)
-                Divider()
+                Divider().overlay(FDTheme.hairlineColor)
                 ContentMatchesView(file: file)
                     .id(file.path)
             }
         } else {
-            VStack(spacing: 10) {
-                Image(systemName: "text.alignleft").font(.system(size: 28))
-                Text("选择文件查看内容匹配").font(.headline)
-                Text("选择左侧文件，查看行号和高亮片段。")
-                    .font(.system(size: 13))
+            VStack(spacing: 9) {
+                FDIconTile(symbol: "text.alignleft", tint: FDTheme.plum, size: 46)
+                Text("选择文件查看内容匹配")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("左侧选择文件，右侧独立滚动展示行号与高亮片段。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
             }
-            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func fileIcon(_ path: String) -> NSImage {
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        icon.size = NSSize(width: 19, height: 19)
+        return icon
     }
 }
 
@@ -113,7 +169,7 @@ private struct ContentMatchesView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainerInset = NSSize(width: 12, height: 12)
-        textView.backgroundColor = .textBackgroundColor
+        textView.backgroundColor = FDTheme.surfaceNSColor
         textView.setAccessibilityLabel("文件内容匹配")
         textView.setAccessibilityIdentifier("content-match-details")
 
@@ -121,12 +177,13 @@ private struct ContentMatchesView: NSViewRepresentable {
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        let font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .regular)
         let digits = String(file.lines.map(\.line).max() ?? 1).count
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
@@ -136,11 +193,15 @@ private struct ContentMatchesView: NSViewRepresentable {
         for line in file.lines {
             let number = String(line.line)
             let prefix = String(repeating: " ", count: max(0, digits - number.count)) + number + "  "
-            content.append(NSAttributedString(string: prefix, attributes: [.foregroundColor: NSColor.secondaryLabelColor]))
+            content.append(NSAttributedString(string: prefix, attributes: [
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .font: font
+            ]))
             content.append(highlightedContent(line, foreground: .labelColor))
             content.append(NSAttributedString(string: "\n"))
         }
-        content.addAttributes([.font: font, .paragraphStyle: paragraph], range: NSRange(location: 0, length: content.length))
+        content.addAttributes([.font: font, .paragraphStyle: paragraph],
+                              range: NSRange(location: 0, length: content.length))
         if textView.textStorage?.isEqual(to: content) == false {
             textView.textStorage?.setAttributedString(content)
         }
@@ -153,8 +214,10 @@ private func highlightedContent(_ line: ContentLine, foreground: NSColor? = nil)
         text.addAttribute(.foregroundColor, value: foreground, range: NSRange(location: 0, length: text.length))
     }
     for range in line.nativeRanges {
-        text.addAttributes([.backgroundColor: NSColor.systemYellow, .foregroundColor: NSColor.black],
-                           range: NSRange(range, in: line.text))
+        text.addAttributes([
+            .backgroundColor: FDTheme.highlightNSColor,
+            .foregroundColor: NSColor.labelColor
+        ], range: NSRange(range, in: line.text))
     }
     return text
 }
