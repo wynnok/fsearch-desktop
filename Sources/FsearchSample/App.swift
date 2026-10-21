@@ -1372,16 +1372,16 @@ struct FsearchSampleApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     @StateObject private var model = SearchModel()
 
-    @SceneBuilder
-    var body: some Scene {
-        if #available(macOS 15.0, *), CommandLine.arguments.contains("--smoke") {
-            mainWindow.defaultLaunchBehavior(.presented)
-        } else {
-            mainWindow
+    init() {
+        if CommandLine.arguments.contains("--smoke") {
+            var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            arguments["ApplePersistenceIgnoreState"] = true
+            UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         }
     }
 
-    private var mainWindow: some Scene {
+    var body: some Scene {
+
         Window("FsearchDesktop", id: "main-search") {
             SearchView(model: model, selectionState: model.selectionState)
                 .background(MainWindowAttachment())
