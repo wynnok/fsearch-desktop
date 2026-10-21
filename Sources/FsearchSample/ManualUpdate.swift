@@ -132,11 +132,11 @@ struct UpdateView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(FDTheme.softFillColor)
                     .frame(width: 76, height: 76)
-                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(FDTheme.hairlineColor, lineWidth: 0.5))
                 FDBrandMark(size: 56)
             }
             .accessibilityHidden(true)
@@ -152,7 +152,7 @@ struct UpdateView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     featureChip("文件名搜索", symbol: "doc.text.magnifyingglass", tint: FDTheme.slate)
-                    featureChip("文本内容", symbol: "text.magnifyingglass", tint: FDTheme.plum)
+                    featureChip("文本内容", symbol: "text.magnifyingglass", tint: FDTheme.teal)
                     featureChip("完全本地", symbol: "lock.shield", tint: FDTheme.olive)
                 }
                 .padding(.top, 2)
@@ -173,10 +173,10 @@ struct UpdateView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 3, style: .continuous)
+        .background(Capsule()
             .fill(tint.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .strokeBorder(tint.opacity(0.16), lineWidth: 1))
+        .overlay(Capsule()
+            .strokeBorder(tint.opacity(0.16), lineWidth: 0.5))
     }
 
     private var engineCard: some View {
@@ -208,10 +208,10 @@ struct UpdateView: View {
     }
 
     private var updateCard: some View {
-        FDCard(padding: 12, tint: FDTheme.plum) {
+        FDCard(padding: 12, tint: FDTheme.teal) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top, spacing: 9) {
-                    FDIconTile(symbol: "arrow.triangle.2.circlepath", tint: FDTheme.plum, size: 30)
+                    FDIconTile(symbol: "arrow.triangle.2.circlepath", tint: FDTheme.teal, size: 30)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 7) {
                             Text("软件更新")
@@ -262,7 +262,7 @@ struct UpdateView: View {
         case .noRelease:
             return ("暂无正式版", "questionmark.circle", FDTheme.ochre)
         case .available:
-            return ("有新版本", "arrow.down.circle.fill", FDTheme.plum)
+            return ("有新版本", "arrow.down.circle.fill", FDTheme.teal)
         case .failed:
             return ("检查失败", "exclamationmark.triangle.fill", FDTheme.clay)
         }

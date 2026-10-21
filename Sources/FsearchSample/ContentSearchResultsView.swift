@@ -25,9 +25,9 @@ struct ContentSearchResultsView: View {
     private var fileList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                FDSectionLabel(title: "匹配文件", symbol: "doc.on.doc", tint: FDTheme.plum)
+                FDSectionLabel(title: "匹配文件", symbol: "doc.on.doc", tint: FDTheme.teal)
                 Spacer()
-                FDCountBadge(text: "\(files.count)", tint: FDTheme.plum)
+                FDCountBadge(text: "\(files.count)", tint: FDTheme.teal)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -52,7 +52,7 @@ struct ContentSearchResultsView: View {
             .overlay {
                 if files.isEmpty {
                     VStack(spacing: 8) {
-                        FDIconTile(symbol: "text.magnifyingglass", tint: FDTheme.plum, size: 38)
+                        FDIconTile(symbol: "text.magnifyingglass", tint: FDTheme.teal, size: 38)
                         Text("暂无匹配文件")
                             .font(.system(size: 12, weight: .semibold))
                         Text("输入正文内容后按 Return")
@@ -69,7 +69,7 @@ struct ContentSearchResultsView: View {
     private func row(for file: ContentFile) -> some View {
         HStack(alignment: .top, spacing: 7) {
             Rectangle()
-                .fill(selection == file.path ? FDTheme.plum : Color.clear)
+                .fill(selection == file.path ? FDTheme.teal : Color.clear)
                 .frame(width: 2, height: 52)
 
             Image(nsImage: fileIcon(file.path))
@@ -84,7 +84,7 @@ struct ContentSearchResultsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
-                    FDCountBadge(text: "\(file.lines.count) 行", tint: FDTheme.plum)
+                    FDCountBadge(text: "\(file.lines.count) 行", tint: FDTheme.teal)
                 }
                 Text((file.path as NSString).deletingLastPathComponent)
                     .font(.system(size: 9.5))
@@ -124,7 +124,7 @@ struct ContentSearchResultsView: View {
                             .truncationMode(.middle)
                     }
                     Spacer(minLength: 6)
-                    FDCountBadge(text: "\(file.lines.count) 处匹配", tint: FDTheme.plum)
+                    FDCountBadge(text: "\(file.lines.count) 处匹配", tint: FDTheme.teal)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
@@ -135,7 +135,7 @@ struct ContentSearchResultsView: View {
             }
         } else {
             VStack(spacing: 9) {
-                FDIconTile(symbol: "text.alignleft", tint: FDTheme.plum, size: 46)
+                FDIconTile(symbol: "text.alignleft", tint: FDTheme.teal, size: 46)
                 Text("选择文件查看内容匹配")
                     .font(.system(size: 13, weight: .semibold))
                 Text("左侧选择文件，右侧独立滚动展示行号与高亮片段。")

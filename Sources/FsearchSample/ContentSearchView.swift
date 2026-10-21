@@ -91,7 +91,7 @@ struct ContentSearchView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
-                FDIconTile(symbol: "text.magnifyingglass", tint: FDTheme.plum, size: 34)
+                FDIconTile(symbol: "text.magnifyingglass", tint: FDTheme.teal, size: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("文本内容搜索")
                         .font(.system(size: 17, weight: .bold))
@@ -115,7 +115,7 @@ struct ContentSearchView: View {
             HStack(spacing: 10) {
                 SearchQueryField(
                     symbol: "text.magnifyingglass",
-                    tint: FDTheme.plum,
+                    tint: FDTheme.teal,
                     onClear: state.pattern.isEmpty ? nil : { state.pattern = "" }
                 ) {
                     TextField("输入文件中的文本…", text: $state.pattern)
@@ -147,8 +147,8 @@ struct ContentSearchView: View {
             HStack(spacing: 9) {
                 FDSegmentedPicker(
                     options: [
-                        .init(value: .literal, title: "普通文本", symbol: "text.alignleft", tint: FDTheme.plum),
-                        .init(value: .regex, title: "正则表达式", symbol: "curlybraces", tint: FDTheme.plum)
+                        .init(value: .literal, title: "普通文本", symbol: "text.alignleft", tint: FDTheme.teal),
+                        .init(value: .regex, title: "正则表达式", symbol: "curlybraces", tint: FDTheme.teal)
                     ],
                     selection: $state.mode,
                     accessibilityLabel: "匹配方式"
@@ -214,7 +214,7 @@ struct ContentSearchView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 10)
-        .background(FDHeaderBackground(accent: FDTheme.plum))
+        .background(FDHeaderBackground(accent: FDTheme.teal))
     }
 
     private var controlDivider: some View {
@@ -253,7 +253,7 @@ struct ContentSearchView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(FDTheme.surfaceFill)
+        .background(FDHeaderBackground(accent: FDTheme.teal))
     }
 
     private func close() {
@@ -281,7 +281,7 @@ struct ContentSearchView: View {
         switch state.controller.phase {
         case .failed: FDTheme.clay
         case .stopped: FDTheme.ochre
-        case .loading: FDTheme.plum
+        case .loading: FDTheme.teal
         case .complete: FDTheme.olive
         default: .secondary
         }

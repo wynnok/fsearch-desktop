@@ -34,10 +34,7 @@ struct SearchScopeMenu: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .fill(FDTheme.ochre.opacity(0.10)))
-            .overlay(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .strokeBorder(FDTheme.ochre.opacity(0.20), lineWidth: 1))
+            .modifier(FDGlassSurface())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -118,17 +115,8 @@ struct SearchFiltersView: View {
                     FDCountBadge(text: "\(configuration.activeFilterCount)", tint: FDTheme.ochre)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .fill(configuration.activeFilterCount > 0
-                      ? FDTheme.ochre.opacity(0.14) : FDTheme.softFillColor))
-            .overlay(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .strokeBorder(configuration.activeFilterCount > 0
-                              ? FDTheme.ochre.opacity(0.24) : FDTheme.hairlineColor, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FDSecondaryButtonStyle())
         .accessibilityIdentifier("attribute-filter")
         .help(configuration.activeFilterCount == 0 ? "按类型、扩展名、大小或时间缩小结果" : "已启用 \(configuration.activeFilterCount) 项属性条件")
         .popover(isPresented: $isExpanded) {
@@ -175,7 +163,7 @@ private struct FilterPopover: View {
                     filterCard(
                         title: "扩展名",
                         symbol: "tag",
-                        tint: FDTheme.plum,
+                        tint: FDTheme.teal,
                         resetHelp: "清除扩展名",
                         resetDisabled: configuration.filters.extensions.isEmpty
                     ) {

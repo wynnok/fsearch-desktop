@@ -116,9 +116,9 @@ struct PermissionStatusView: View {
 
                     permissionCard
 
-                    FDCard(padding: 11, tint: FDTheme.plum) {
+                    FDCard(padding: 11, tint: FDTheme.teal) {
                         VStack(alignment: .leading, spacing: 5) {
-                            FDSectionLabel(title: "搜索边界", symbol: "icloud", tint: FDTheme.plum)
+                            FDSectionLabel(title: "搜索边界", symbol: "icloud", tint: FDTheme.teal)
                             Text("云端尚未下载的文件正文可能不可用；应用不会为搜索主动下载它们。PDF、Office、OCR 与压缩包正文不在支持范围内。")
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.secondary)
@@ -168,7 +168,7 @@ struct PermissionStatusView: View {
                 Divider().overlay(FDTheme.hairlineColor)
                 capabilityRow(title: "文本内容搜索",
                               symbol: "text.magnifyingglass",
-                              tint: FDTheme.plum,
+                              tint: FDTheme.teal,
                               message: state.contentMessage,
                               badge: contentBadge)
             }
@@ -292,7 +292,7 @@ struct PermissionStatusView: View {
                 .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                 .foregroundStyle(FDTheme.onAccent)
                 .frame(width: 17, height: 17)
-                .background(RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .background(Capsule()
                     .fill(FDTheme.sage))
             Text(text)
                 .font(.system(size: 10.5))
@@ -387,19 +387,13 @@ struct PermissionOnboardingBanner: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
                     .fill(FDTheme.sage.opacity(scheme == .dark ? 0.14 : 0.07))
             }
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(FDTheme.sage)
-                    .frame(width: 2)
-                    .padding(.vertical, 6)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(FDTheme.sage.opacity(0.18), lineWidth: 1)
+                RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+                    .strokeBorder(FDTheme.sage.opacity(0.18), lineWidth: 0.5)
             }
         }
     }

@@ -3,37 +3,36 @@ import SwiftUI
 
 /// Shared visual language for every FsearchDesktop surface.
 ///
-/// The palette is deliberately quiet: warm paper and ink, plus a small set of
-/// desaturated earth accents. Fills are flat and matte; borders, spacing and
-/// type carry the hierarchy instead of gradients, glows or heavy shadows.
+/// Neutral content surfaces keep files legible; system glass belongs to controls.
+/// Ocean, teal, amber and coral provide small, purposeful accents.
 enum FDTheme {
-    static let canvas = adaptive("canvas", light: 0xF2EFE8, dark: 0x1B1A17)
-    static let surfaceFill = adaptive("surface", light: 0xFAF7EF, dark: 0x23221F)
-    static let headerFill = adaptive("header", light: 0xECE7DC, dark: 0x201F1C)
-    static let hairlineColor = adaptive("hairline", light: 0xD6D0C3, dark: 0x3A3731)
-    static let softFillColor = adaptive("soft-fill", light: 0xE9E4D9, dark: 0x2C2A26)
-    static let ink = adaptive("ink", light: 0x25231F, dark: 0xEAE5DB)
-    static let onAccent = adaptive("on-accent", light: 0xF7F3EA, dark: 0x1B1A17)
+    static let canvas = adaptive("canvas", light: 0xF3F5F7, dark: 0x191C20)
+    static let surfaceFill = adaptive("surface", light: 0xFFFFFF, dark: 0x22262B)
+    static let headerFill = adaptive("header", light: 0xF4F6F8, dark: 0x20252B)
+    static let hairlineColor = Color(nsColor: .separatorColor).opacity(0.55)
+    static let softFillColor = adaptive("soft-fill", light: 0xEBEFF3, dark: 0x30363E)
+    static let ink = Color(nsColor: .labelColor)
+    static let onAccent = Color.white
 
-    static let primary = adaptive("primary", light: 0x9A4B3A, dark: 0xC07E68)
-    static let slate = adaptive("slate", light: 0x4B5F69, dark: 0x8DA6B1)
-    static let ochre = adaptive("ochre", light: 0x8A6428, dark: 0xC9A15E)
-    static let olive = adaptive("olive", light: 0x5C6B4A, dark: 0x9AAE83)
-    static let clay = adaptive("clay", light: 0x8E4638, dark: 0xC47C69)
-    static let plum = adaptive("plum", light: 0x6B4F5C, dark: 0xB08E9E)
-    static let sage = adaptive("sage", light: 0x4F6B5A, dark: 0x8FAF9C)
-    static let stone = adaptive("stone", light: 0x6B665D, dark: 0xA9A297)
-    static let rose = adaptive("rose", light: 0x8A5A5F, dark: 0xC09499)
+    static let primary = adaptive("primary", light: 0x0867B5, dark: 0x1479C9)
+    static let slate = adaptive("slate", light: 0x176FA6, dark: 0x75BFF0)
+    static let ochre = adaptive("ochre", light: 0x966116, dark: 0xEDB75D)
+    static let olive = adaptive("olive", light: 0x31744C, dark: 0x86CCA0)
+    static let clay = adaptive("clay", light: 0xB64438, dark: 0xF19C8D)
+    static let teal = adaptive("teal", light: 0x087C83, dark: 0x74CCD0)
+    static let sage = adaptive("sage", light: 0x337667, dark: 0x82C8B6)
+    static let stone = adaptive("stone", light: 0x626D79, dark: 0xA6B0BE)
+    static let rose = adaptive("rose", light: 0xAF4F63, dark: 0xEEA1B0)
 
-    static let cardRadius: CGFloat = 6
-    static let controlRadius: CGFloat = 4
+    static let cardRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 12
 
-    static let selectionNSColor = nsAdaptive("selection-ns", light: 0xD9C9AB, dark: 0x4D4538)
-    static let highlightNSColor = nsAdaptive("highlight-ns", light: 0xDCC27A, dark: 0xAA8240, alpha: 0.50)
-    static let headerNSColor = nsAdaptive("header-ns", light: 0xECE7DC, dark: 0x201F1C)
-    static let surfaceNSColor = nsAdaptive("surface-ns", light: 0xFAF7EF, dark: 0x23221F)
-    static let hairlineNSColor = nsAdaptive("hairline-ns", light: 0xD6D0C3, dark: 0x3A3731)
-    static let primaryNSColor = nsAdaptive("primary-ns", light: 0x9A4B3A, dark: 0xC07E68)
+    static let selectionNSColor = nsAdaptive("selection-ns", light: 0xD9EBFA, dark: 0x254B6A)
+    static let highlightNSColor = nsAdaptive("highlight-ns", light: 0xF1CB75, dark: 0x9A7126, alpha: 0.50)
+    static let headerNSColor = nsAdaptive("header-ns", light: 0xF4F6F8, dark: 0x20252B)
+    static let surfaceNSColor = nsAdaptive("surface-ns", light: 0xFFFFFF, dark: 0x22262B)
+    static let hairlineNSColor = NSColor.separatorColor
+    static let primaryNSColor = nsAdaptive("primary-ns", light: 0x0867B5, dark: 0x75BFF0)
 
 
     private static func adaptive(_ name: String, light: UInt32, dark: UInt32) -> Color {
@@ -62,6 +61,31 @@ private extension NSColor {
 
 // MARK: - Surfaces
 
+/// Use native Liquid Glass when available, with an accessible material fallback.
+struct FDGlassSurface: ViewModifier {
+    var radius: CGFloat = FDTheme.controlRadius
+    var tint: Color? = nil
+    var interactive = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if reduceTransparency || contrast == .increased {
+            content
+                .background(FDTheme.surfaceFill, in: shape)
+                .overlay(shape.strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
+        } else if #available(macOS 26.0, *) {
+            content.glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(FDTheme.hairlineColor, lineWidth: 0.5))
+        }
+    }
+}
+
 struct FDAuroraBackground: View {
     var body: some View {
         FDTheme.canvas
@@ -71,16 +95,18 @@ struct FDAuroraBackground: View {
 
 struct FDHeaderBackground: View {
     var accent: Color = FDTheme.primary
-    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        FDTheme.headerFill
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(accent)
-                    .frame(height: 2)
-                    .opacity(scheme == .dark ? 0.72 : 0.62)
+        ZStack {
+            if reduceTransparency || contrast == .increased {
+                FDTheme.headerFill
+            } else {
+                Rectangle().fill(.regularMaterial)
+                accent.opacity(0.025)
             }
+        }
     }
 }
 
@@ -88,7 +114,6 @@ struct FDCard<Content: View>: View {
     var padding: CGFloat = 14
     var tint: Color?
     @ViewBuilder var content: () -> Content
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         content()
@@ -97,18 +122,10 @@ struct FDCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: FDTheme.cardRadius, style: .continuous)
                     .fill(FDTheme.surfaceFill)
             }
-            .overlay(alignment: .leading) {
-                if let tint {
-                    Rectangle()
-                        .fill(tint)
-                        .frame(width: 2)
-                        .padding(.vertical, 8)
-                }
-            }
             .clipShape(RoundedRectangle(cornerRadius: FDTheme.cardRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: FDTheme.cardRadius, style: .continuous)
-                    .strokeBorder(FDTheme.hairlineColor, lineWidth: 1)
+                    .strokeBorder(tint?.opacity(0.16) ?? FDTheme.hairlineColor, lineWidth: 0.5)
             }
     }
 }
@@ -122,8 +139,8 @@ struct FDIconTile: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(tint.opacity(scheme == .dark ? 0.22 : 0.12))
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(tint.opacity(scheme == .dark ? 0.20 : 0.09))
             .frame(width: size, height: size)
             .overlay {
                 Image(systemName: symbol)
@@ -132,8 +149,8 @@ struct FDIconTile: View {
                     .symbolRenderingMode(.hierarchical)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(tint.opacity(scheme == .dark ? 0.34 : 0.22), lineWidth: 1)
+                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                    .strokeBorder(tint.opacity(scheme == .dark ? 0.26 : 0.12), lineWidth: 0.5)
             }
             .accessibilityHidden(true)
     }
@@ -144,16 +161,16 @@ struct FDBrandMark: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(FDTheme.ink)
+            RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
+                .fill(FDTheme.primary)
             Image(systemName: "magnifyingglass")
                 .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(FDTheme.canvas)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Rectangle()
-                .fill(FDTheme.primary)
+            Circle()
+                .fill(Color(red: 0.98, green: 0.72, blue: 0.30))
                 .frame(width: size * 0.18, height: size * 0.18)
-                .padding(size * 0.09)
+                .padding(size * 0.12)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -168,10 +185,10 @@ struct FDCountBadge: View {
         Text(text)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .monospacedDigit()
-            .foregroundStyle(FDTheme.onAccent)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
-            .background(RoundedRectangle(cornerRadius: 2, style: .continuous).fill(tint))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(tint.opacity(0.12)))
     }
 }
 
@@ -189,21 +206,21 @@ struct FDStatusPill: View {
                     .controlSize(.mini)
                     .tint(tint)
             } else {
-                Rectangle()
-                    .fill(tint)
-                    .frame(width: 5, height: 5)
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(tint)
             }
             Text(text)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 3, style: .continuous)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule()
             .fill(tint.opacity(scheme == .dark ? 0.13 : 0.08)))
-        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .strokeBorder(tint.opacity(scheme == .dark ? 0.24 : 0.16), lineWidth: 1))
+        .overlay(Capsule()
+            .strokeBorder(tint.opacity(scheme == .dark ? 0.24 : 0.12), lineWidth: 0.5))
     }
 }
 
@@ -262,6 +279,7 @@ struct FDSegmentedPicker<Value: Hashable>: View {
     let options: [FDSegmentedOption<Value>]
     @Binding var selection: Value
     var accessibilityLabel: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -274,32 +292,31 @@ struct FDSegmentedPicker<Value: Hashable>: View {
                     HStack(spacing: 5) {
                         Image(systemName: option.symbol)
                             .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(isSelected ? FDTheme.onAccent : option.tint)
+                            .foregroundStyle(isSelected ? option.tint : Color.secondary)
                             .symbolRenderingMode(.hierarchical)
                         Text(option.title)
                             .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
-                            .foregroundStyle(isSelected ? FDTheme.onAccent : Color.secondary)
+                            .foregroundStyle(isSelected ? FDTheme.ink : Color.secondary)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .background {
                         if isSelected {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(FDTheme.primary)
+                            RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+                                .fill(FDTheme.surfaceFill)
+                                .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
                         }
                     }
-                    .contentShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(option.title)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(2)
-        .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-            .fill(FDTheme.softFillColor))
-        .overlay(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-            .strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
+        .padding(3)
+        .modifier(FDGlassSurface(radius: FDTheme.controlRadius + 3))
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: selection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -318,10 +335,10 @@ struct FDActionIconButton: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(isEnabled ? tint : Color.secondary.opacity(0.5))
                 .symbolRenderingMode(.hierarchical)
-                .frame(width: 25, height: 22)
-                .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .frame(width: 26, height: 24)
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FDSecondaryButtonStyle())
         .disabled(!isEnabled)
         .help(label)
         .accessibilityLabel(label)
@@ -347,17 +364,11 @@ struct FDNoticeBanner: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
             .fill(tint.opacity(scheme == .dark ? 0.14 : 0.07)))
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(tint)
-                .frame(width: 2)
-                .padding(.vertical, 6)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .strokeBorder(tint.opacity(0.18), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+            .strokeBorder(tint.opacity(0.18), lineWidth: 0.5))
     }
 }
 
@@ -374,6 +385,7 @@ struct FDPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
                 .fill(tint))
+            .modifier(FDGlassSurface(tint: tint, interactive: isEnabled))
             .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.42)
     }
 }
@@ -385,11 +397,8 @@ struct FDSecondaryButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(FDTheme.ink)
             .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .fill(FDTheme.surfaceFill))
-            .overlay(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
+            .padding(.vertical, 6)
+            .modifier(FDGlassSurface(interactive: isEnabled))
             .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.42)
     }
 }
@@ -404,13 +413,13 @@ struct FDEmptyState: View {
     var hints: [(key: String, label: String)] = []
 
     var body: some View {
-        VStack(spacing: 10) {
-            FDIconTile(symbol: symbol, tint: tint, size: 52)
-                .padding(.bottom, 2)
+        VStack(spacing: 12) {
+            FDIconTile(symbol: symbol, tint: tint, size: 68)
+                .padding(.bottom, 6)
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
             Text(message)
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

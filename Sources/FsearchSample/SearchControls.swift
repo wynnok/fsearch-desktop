@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SearchControlsLayout {
     static let actionWidth: CGFloat = 132
+    static let queryHeight: CGFloat = 44
 }
 
 struct SearchQueryField<Content: View>: View {
@@ -9,7 +10,7 @@ struct SearchQueryField<Content: View>: View {
     var tint: Color = FDTheme.primary
     var onClear: (() -> Void)?
     @ViewBuilder let content: Content
-    @Environment(\.colorScheme) private var scheme
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 9) {
@@ -34,14 +35,17 @@ struct SearchQueryField<Content: View>: View {
             }
         }
         .padding(.horizontal, 11)
-        .frame(minWidth: 240, minHeight: 40, maxHeight: 40)
+        .frame(minWidth: 240, minHeight: SearchControlsLayout.queryHeight,
+               maxHeight: SearchControlsLayout.queryHeight)
+        .focused($isFocused)
         .background {
             RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
                 .fill(FDTheme.surfaceFill)
         }
         .overlay {
             RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .strokeBorder(tint.opacity(scheme == .dark ? 0.52 : 0.34), lineWidth: 1)
+                .strokeBorder(isFocused ? tint.opacity(0.65) : FDTheme.hairlineColor,
+                              lineWidth: isFocused ? 1.5 : 0.5)
         }
     }
 }
@@ -57,7 +61,7 @@ struct SearchSubmitButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12.5, weight: .semibold))
-                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity, minHeight: 26)
+                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity, minHeight: 34)
         }
         .buttonStyle(FDPrimaryButtonStyle(tint: tint))
         .frame(width: width)
@@ -89,7 +93,7 @@ enum SearchFileAction: String, CaseIterable {
     var tint: Color {
         switch self {
         case .open: FDTheme.slate
-        case .preview: FDTheme.plum
+        case .preview: FDTheme.teal
         case .reveal: FDTheme.ochre
         case .copy: FDTheme.sage
         }
@@ -128,7 +132,7 @@ struct SearchFileActionIconRow: View {
     var size: CGFloat = 22
 
     var body: some View {
-        HStack(spacing: 1) {
+        HStack(spacing: 4) {
             ForEach(SearchFileAction.allCases, id: \.self) { action in
                 Button {
                     action.perform(path: path, actions: actions)
@@ -139,7 +143,7 @@ struct SearchFileActionIconRow: View {
                         .foregroundStyle(path == nil || actions.isMutating
                                          ? Color.secondary.opacity(0.45) : action.tint)
                         .frame(width: size, height: size)
-                        .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(path == nil || actions.isMutating)
@@ -148,5 +152,8 @@ struct SearchFileActionIconRow: View {
                 .accessibilityIdentifier("file-action-\(action.rawValue)")
             }
         }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .modifier(FDGlassSurface())
     }
 }

@@ -127,12 +127,12 @@ struct SearchView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                FDBrandMark(size: 30)
+                FDBrandMark(size: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Fsearch")
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.system(size: 19, weight: .semibold))
                     Text(model.isEngineMode ? "本机文件搜索" : "样本验证 · 仅受控样本")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -219,9 +219,9 @@ struct SearchView: View {
                 FDNoticeBanner(text: message, symbol: "exclamationmark.circle.fill", tint: FDTheme.clay)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 11)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
         .background(FDHeaderBackground(accent: FDTheme.slate))
     }
 
@@ -303,9 +303,9 @@ struct SearchView: View {
     private var resultsHeader: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Rectangle()
-                    .fill(FDTheme.slate)
-                    .frame(width: 3, height: 12)
+                Image(systemName: "list.bullet.rectangle")
+                    .foregroundStyle(FDTheme.slate)
+                    .font(.system(size: 12, weight: .medium))
                 Text("搜索结果")
                     .font(.system(size: 12.5, weight: .semibold))
                 if !model.results.isEmpty {
@@ -338,8 +338,8 @@ struct SearchView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder
@@ -375,7 +375,7 @@ struct SearchView: View {
                 FDEmptyState(symbol: "doc.text.magnifyingglass",
                              title: "从一次搜索开始",
                              message: "输入文件名后按 Return，结果会出现在这里。",
-                             tint: FDTheme.slate,
+                             tint: FDTheme.primary,
                              hints: [("⌘F", "聚焦搜索"), ("⌘R", "刷新")])
             }
         }
@@ -395,9 +395,7 @@ struct SearchView: View {
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(FDTheme.ochre.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .strokeBorder(FDTheme.ochre.opacity(0.18), lineWidth: 1))
+        .background(Capsule().fill(FDTheme.softFillColor.opacity(0.65)))
         .help("点击结果列标题可切换排序")
         .accessibilityIdentifier("current-sort")
     }
@@ -449,7 +447,7 @@ struct SearchView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(minHeight: 62, alignment: .top)
-        .background(FDTheme.surfaceFill)
+        .background(FDHeaderBackground())
     }
 
     private var footerTextLeadingInset: CGFloat {
@@ -506,11 +504,14 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.isEditable = true
         textView.isSelectable = true
         textView.isRichText = false
+        textView.drawsBackground = false
+        textView.textColor = .labelColor
         textView.allowsUndo = true
         textView.font = .preferredFont(forTextStyle: .body)
         textView.insertionPointColor = FDTheme.primaryNSColor
         textView.selectedTextAttributes = [.backgroundColor: FDTheme.selectionNSColor]
-        textView.textContainerInset = NSSize(width: 4, height: 11.5)
+        let lineHeight = textView.layoutManager?.defaultLineHeight(for: textView.font!) ?? 16
+        textView.textContainerInset = NSSize(width: 4, height: (SearchControlsLayout.queryHeight - lineHeight) / 2)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -619,7 +620,7 @@ final class FDTableRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         FDTheme.selectionNSColor.setFill()
-        NSBezierPath(rect: bounds).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 8, yRadius: 8).fill()
     }
 }
 
@@ -628,7 +629,7 @@ final class FDTableHeaderCell: NSTableHeaderCell {
         FDTheme.headerNSColor.setFill()
         cellFrame.fill()
         FDTheme.hairlineNSColor.setFill()
-        NSRect(x: cellFrame.minX, y: cellFrame.maxY - 1, width: cellFrame.width, height: 1).fill()
+        NSRect(x: cellFrame.minX, y: cellFrame.maxY - 0.5, width: cellFrame.width, height: 0.5).fill()
         drawInterior(withFrame: cellFrame, in: controlView)
     }
 }
@@ -716,10 +717,11 @@ private struct ResultsTableView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let table = NonAnimatingTableView()
         table.autoresizingMask = [.width]
-        table.usesAlternatingRowBackgroundColors = false
+        table.usesAlternatingRowBackgroundColors = true
+        table.style = .inset
         table.backgroundColor = FDTheme.surfaceNSColor
-        table.rowHeight = 30
-        table.intercellSpacing = NSSize(width: 0, height: 1)
+        table.rowHeight = 32
+        table.intercellSpacing = NSSize(width: 0, height: 3)
         table.allowsMultipleSelection = true
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.openSelection)

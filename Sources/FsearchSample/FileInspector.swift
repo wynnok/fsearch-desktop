@@ -127,7 +127,7 @@ struct FileInspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(FDTheme.canvas)
+        .background(FDHeaderBackground(accent: FDTheme.slate))
         .tint(FDTheme.primary)
         .accessibilityIdentifier("inspector")
     }
@@ -154,12 +154,6 @@ struct FileInspectorView: View {
             hero(result)
 
             SearchFileActionIconRow(path: path ?? result.path, actions: actions, size: 28)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(FDTheme.softFillColor))
-                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
                 .frame(maxWidth: .infinity)
 
             inspectorCard(title: "位置", symbol: "link", tint: FDTheme.slate) {
@@ -181,7 +175,7 @@ struct FileInspectorView: View {
             }
 
             if state.path == result.path, let details = state.details {
-                inspectorCard(title: "实时属性", symbol: "doc.text.magnifyingglass", tint: FDTheme.plum) {
+                inspectorCard(title: "实时属性", symbol: "doc.text.magnifyingglass", tint: FDTheme.teal) {
                     metadataRow("类型", details.kind)
                     metadataRow("实际大小", details.size.map {
                         ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
@@ -209,11 +203,11 @@ struct FileInspectorView: View {
     private func hero(_ result: SearchResult) -> some View {
         VStack(spacing: 7) {
             ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: FDTheme.cardRadius, style: .continuous)
                     .fill(FDTheme.slate.opacity(scheme == .dark ? 0.18 : 0.09))
                     .frame(width: 62, height: 62)
-                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(FDTheme.slate.opacity(0.20), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: FDTheme.cardRadius, style: .continuous)
+                        .strokeBorder(FDTheme.slate.opacity(0.12), lineWidth: 0.5))
                 Image(nsImage: state.path == result.path
                       ? (state.details?.icon ?? NSWorkspace.shared.icon(forFile: result.path))
                       : NSWorkspace.shared.icon(forFile: result.path))

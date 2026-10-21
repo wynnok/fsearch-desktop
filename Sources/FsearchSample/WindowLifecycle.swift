@@ -9,6 +9,9 @@ final class MainWindowLifecycle: NSObject, NSWindowDelegate {
     func attach(_ window: NSWindow) {
         self.window = window
         window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = FDTheme.headerNSColor
+        window.toolbarStyle = .unified
         window.delegate = self
     }
 
