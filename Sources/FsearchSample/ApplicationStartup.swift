@@ -9,7 +9,18 @@ enum ApplicationStartup: Equatable {
             self = .desktop(index: applicationSupport.appendingPathComponent("FsearchDesktop/index", isDirectory: true),
                             home: home)
         } else {
-            self = .sample(URL(fileURLWithPath: arguments[1]))
+            let argument = arguments[1]
+            let path = argument.hasPrefix("--sample-directory=")
+                ? String(argument.dropFirst("--sample-directory=".count)) : argument
+            self = .sample(URL(fileURLWithPath: path))
         }
+    }
+
+    static func smokeOutput(arguments: [String]) -> URL? {
+        guard arguments.count == 4, arguments[2] == "--smoke" else { return nil }
+        let argument = arguments[3]
+        let path = argument.hasPrefix("--smoke-output=")
+            ? String(argument.dropFirst("--smoke-output=".count)) : argument
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 }

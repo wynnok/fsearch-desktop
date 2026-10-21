@@ -199,8 +199,7 @@ final class SearchModel: ObservableObject {
                 return
             }
             guard case .sample(var directory) = startup else { return }
-            if arguments.count == 4, arguments[2] == "--smoke" {
-                let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
+            if let output = ApplicationStartup.smokeOutput(arguments: arguments) {
                 directory = try NativeSmokeFixtures.create(under: output)
                 smokeDirectory = directory
             }
@@ -464,10 +463,9 @@ final class SearchModel: ObservableObject {
             return
         }
         let arguments = CommandLine.arguments
-        guard arguments.count == 4, arguments[2] == "--smoke" else { return }
+        guard let output = ApplicationStartup.smokeOutput(arguments: arguments) else { return }
         print("Native smoke started")
         fflush(stdout)
-        let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
         defer { try? cleanupSmokeFixtures() }
         do {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

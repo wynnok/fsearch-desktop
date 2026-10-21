@@ -16,8 +16,8 @@ case "$ACTION" in
         case "$ACTION" in
             build|check) swift build "${SWIFT_OPTIONS[@]}" ;;
             test) swift test "${SWIFT_OPTIONS[@]}" "$@" ;;
-            run) swift run "${SWIFT_OPTIONS[@]}" FsearchSample "$PROJECT_ROOT/fixtures/sample" "$@" ;;
-            ui-smoke) swift run "${SWIFT_OPTIONS[@]}" FsearchSample "$PROJECT_ROOT/fixtures/sample" --smoke "$PROJECT_ROOT/.build/native-smoke" ;;
+            run) swift run "${SWIFT_OPTIONS[@]}" FsearchSample "--sample-directory=$PROJECT_ROOT/fixtures/sample" "$@" ;;
+            ui-smoke) swift run "${SWIFT_OPTIONS[@]}" FsearchSample "--sample-directory=$PROJECT_ROOT/fixtures/sample" --smoke "--smoke-output=$PROJECT_ROOT/.build/native-smoke" ;;
         esac
         touch .build/swift-linked-rust
         ;;

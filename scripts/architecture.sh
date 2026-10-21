@@ -116,7 +116,7 @@ PLIST
         else
             printf 'Execution: native\n' >> "$OUTPUT/environment.txt"
         fi
-        arch "-$ARCHITECTURE" "$EXECUTABLE" "$PROJECT_ROOT/fixtures/sample" --smoke "$OUTPUT" > "$OUTPUT/launch.log" 2>&1
+        arch "-$ARCHITECTURE" "$EXECUTABLE" "--sample-directory=$PROJECT_ROOT/fixtures/sample" --smoke "--smoke-output=$OUTPUT" > "$OUTPUT/launch.log" 2>&1
         cat "$OUTPUT/launch.log"
         ;;
 esac

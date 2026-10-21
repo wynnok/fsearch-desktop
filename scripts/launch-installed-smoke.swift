@@ -59,7 +59,8 @@ private struct InstalledSmokeLauncher {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.createsNewApplicationInstance = true
-        configuration.arguments = [arguments[2], "--smoke", arguments[3]]
+        // Bare paths are treated as file-open requests and can suppress SwiftUI's initial window.
+        configuration.arguments = ["--sample-directory=\(arguments[2])", "--smoke", "--smoke-output=\(arguments[3])"]
         configuration.environment = ProcessInfo.processInfo.environment.merging(["FSEARCH_NATIVE_SMOKE_LOG": log]) {
             _, value in value
         }

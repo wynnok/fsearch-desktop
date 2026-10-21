@@ -23,4 +23,19 @@ final class ApplicationStartupTests: XCTestCase {
                                           home: URL(fileURLWithPath: "/Users/test")),
                        .sample(URL(fileURLWithPath: "/project/fixtures/sample")))
     }
+
+    func testSampleSmokeOptionsKeepPathsOutOfFileOpenArguments() {
+        let directory = "/project/fixtures/sample with spaces"
+        let output = "/project/.build/smoke output"
+        let arguments = ["FsearchSample", "--sample-directory=\(directory)", "--smoke", "--smoke-output=\(output)"]
+        XCTAssertEqual(ApplicationStartup(arguments: arguments,
+                                          applicationSupport: URL(fileURLWithPath: "/unused"),
+                                          home: URL(fileURLWithPath: "/Users/test")),
+                       .sample(URL(fileURLWithPath: directory)))
+        XCTAssertEqual(ApplicationStartup.smokeOutput(arguments: arguments),
+                       URL(fileURLWithPath: output, isDirectory: true))
+        XCTAssertEqual(ApplicationStartup.smokeOutput(arguments: ["FsearchSample", directory, "--smoke", output]),
+                       ApplicationStartup.smokeOutput(arguments: arguments))
+        XCTAssertNil(ApplicationStartup.smokeOutput(arguments: ["FsearchSample", directory]))
+    }
 }
