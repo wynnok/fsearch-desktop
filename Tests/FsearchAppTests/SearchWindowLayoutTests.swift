@@ -148,6 +148,12 @@ final class SearchWindowLayoutTests: XCTestCase {
                                  "Search must leave the native window buttons clear")
             XCTAssertLessThanOrEqual(abs(inputFrame.midY - zoomFrame.midY), 14,
                                     "Search and window buttons should share a compact title row")
+            let layout = try XCTUnwrap(editor.layoutManager)
+            let container = try XCTUnwrap(editor.textContainer)
+            let textBounds = layout.boundingRect(forGlyphRange: layout.glyphRange(for: container), in: container)
+                .offsetBy(dx: editor.textContainerOrigin.x, dy: editor.textContainerOrigin.y)
+            XCTAssertEqual(editor.convert(textBounds, to: input).midY, input.bounds.midY, accuracy: 1,
+                           "The title bar must not push query text below the search field's center")
             XCTAssertTrue(visible.contains(results.convert(results.bounds, to: nil)), "Results are clipped at \(size)")
             XCTAssertGreaterThan(results.bounds.height, 400, "Compact chrome should leave most of the window for results")
             XCTAssertLessThanOrEqual(table.tableColumns.reduce(0) { $0 + $1.width }, results.contentSize.width + 1,

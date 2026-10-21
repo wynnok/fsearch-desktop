@@ -508,6 +508,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.setAccessibilityIdentifier("main-query")
 
         let scrollView = NSScrollView()
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
