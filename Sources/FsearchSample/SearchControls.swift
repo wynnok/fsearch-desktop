@@ -58,11 +58,26 @@ struct SearchSubmitButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12.5, weight: .semibold))
-                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity, minHeight: 34)
+                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity)
         }
-        .buttonStyle(FDPrimaryButtonStyle(tint: tint))
-        .frame(width: width)
+        .buttonStyle(SearchSubmitButtonStyle(tint: tint))
+        .frame(width: width, height: SearchControlsLayout.queryHeight)
         .keyboardShortcut(.return, modifiers: .command)
+    }
+}
+
+private struct SearchSubmitButtonStyle: ButtonStyle {
+    let tint: Color
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+        configuration.label
+            .frame(height: SearchControlsLayout.queryHeight)
+            .foregroundStyle(FDTheme.onAccent)
+            .background(tint, in: shape)
+            .contentShape(shape)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.84 : 1) : 0.42)
     }
 }
 
