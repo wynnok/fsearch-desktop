@@ -10,11 +10,8 @@ final class MainWindowLifecycle: NSObject, NSWindowDelegate {
         self.window = window
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarSeparatorStyle = .none
         window.backgroundColor = FDTheme.surfaceNSColor
-        window.isMovableByWindowBackground = true
+        window.toolbarStyle = .unifiedCompact
         window.delegate = self
     }
 

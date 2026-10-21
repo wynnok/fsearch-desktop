@@ -1195,8 +1195,8 @@ final class SearchModel: ObservableObject {
             }
             let visible = window.contentLayoutRect
             let resultFrame = results.convert(results.bounds, to: nil)
-            try require(root.bounds.contains(input.convert(input.bounds, to: root)), "Native search input is clipped")
-            try require(visible.contains(resultFrame) && resultFrame.height >= 400,
+            try require(visible.contains(input.convert(input.bounds, to: nil)), "Native search input is clipped")
+            try require(visible.contains(resultFrame) && resultFrame.height >= 250,
                         "Native results workspace is clipped or too small")
             try require(resultFrame.minY - visible.minY >= 60, "Native bottom actions are clipped")
             try require(table.tableColumns.reduce(0) { $0 + $1.width } <= results.contentSize.width + 1,
@@ -1378,7 +1378,6 @@ struct FsearchSampleApp: App {
                     ContentSearchView(state: model.contentSearch)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
         .commands {

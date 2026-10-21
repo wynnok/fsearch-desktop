@@ -13,7 +13,13 @@ final class WindowLifecycleTests: XCTestCase {
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         let content = NSView()
         window.contentView = content
+        window.toolbar = NSToolbar(identifier: "compact-window-check")
+        window.toolbarStyle = .unified
+        let previousChromeHeight = window.frame.height - window.contentLayoutRect.height
         lifecycle.attach(window)
+        XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
+        XCTAssertLessThan(window.frame.height - window.contentLayoutRect.height, previousChromeHeight,
+                          "The title bar should shrink without moving search into the window chrome")
         window.orderFront(nil)
         window.performClose(nil)
         XCTAssertFalse(window.isVisible)

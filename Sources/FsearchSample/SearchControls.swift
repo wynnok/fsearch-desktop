@@ -8,7 +8,6 @@ enum SearchControlsLayout {
 struct SearchQueryField<Content: View>: View {
     var symbol = "magnifyingglass"
     var tint: Color = FDTheme.primary
-    var height: CGFloat = SearchControlsLayout.queryHeight
     var onClear: (() -> Void)?
     @ViewBuilder let content: Content
 
@@ -35,7 +34,8 @@ struct SearchQueryField<Content: View>: View {
             }
         }
         .padding(.horizontal, 11)
-        .frame(minWidth: 240, minHeight: height, maxHeight: height)
+        .frame(minWidth: 240, minHeight: SearchControlsLayout.queryHeight,
+               maxHeight: SearchControlsLayout.queryHeight)
         .background {
             RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
                 .fill(FDTheme.surfaceFill)
@@ -50,7 +50,6 @@ struct SearchQueryField<Content: View>: View {
 struct SearchSubmitButton: View {
     let title: String
     var width: CGFloat? = nil
-    var minimumHeight: CGFloat = 34
     var tint: Color = FDTheme.primary
     var symbol = "magnifyingglass"
     let action: () -> Void
@@ -59,7 +58,7 @@ struct SearchSubmitButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12.5, weight: .semibold))
-                .frame(maxWidth: width == nil ? nil : .infinity, minHeight: minimumHeight)
+                .frame(minWidth: 92, maxWidth: width == nil ? nil : .infinity, minHeight: 34)
         }
         .buttonStyle(FDPrimaryButtonStyle(tint: tint))
         .frame(width: width)
