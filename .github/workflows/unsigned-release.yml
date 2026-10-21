@@ -15,12 +15,13 @@ concurrency:
 jobs:
   package:
     name: Build, verify and publish unsigned pre-release
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 120
     permissions:
       contents: write
     env:
       FSEARCH_DEV_RUST_VERSION: "1.99.0"
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Check out exact revision
@@ -28,12 +29,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select Xcode 16+
+      - name: Verify Xcode 26.6
         run: |
           set -euo pipefail
-          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
-          [[ -n "$XCODE_APP" ]] || { echo "Xcode 16+ is required for Swift 6" >&2; exit 1; }
-          sudo xcode-select -s "$XCODE_APP"
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
           swift --version
 
       - name: Prepare pinned project-local Rust toolchain
@@ -81,19 +81,34 @@ jobs:
           test -s "docs/releases/$RELEASE_TAG.md"
           grep -Fq "应用内版本为 \`$version\`" "docs/releases/$RELEASE_TAG.md"
 
-      - name: Create unsigned GitHub pre-release
+      - name: Publish unsigned GitHub pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --prerelease \
-            --title "$RELEASE_TAG (unsigned)" \
-            --notes-file "docs/releases/$RELEASE_TAG.md" \
+          assets=(
             .build/dev-dmg/output/*.dmg \
             .build/dev-dmg/output/SHA256SUMS \
             .build/dev-dmg/output/build-manifest*.txt \
             .build/dev-dmg/output/THIRD-PARTY-NOTICES.txt \
             .build/dev-dmg/verification/verification-report*.txt
+          )
+          if existing="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"; then
+            [[ "$existing" == true ]] || { echo 'Refusing to replace a stable release' >&2; exit 1; }
+            gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease \
+              --title "$RELEASE_TAG (unsigned)" --notes-file "docs/releases/$RELEASE_TAG.md"
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+              while IFS= read -r name; do
+                case "$name" in
+                  "Fsearch-Desktop-${FSEARCH_DEV_VERSION}-unsigned-"*.dmg)
+                    if [[ ! -f ".build/dev-dmg/output/$name" ]]; then
+                      gh release delete-asset "$RELEASE_TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes
+                    fi
+                    ;;
+                esac
+              done
+          else
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+              --title "$RELEASE_TAG (unsigned)" --notes-file "docs/releases/$RELEASE_TAG.md" "${assets[@]}"
+          fi

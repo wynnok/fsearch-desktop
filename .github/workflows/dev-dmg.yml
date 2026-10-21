@@ -19,10 +19,11 @@ concurrency:
 jobs:
   package:
     name: Build and verify development DMG
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       FSEARCH_DEV_RUST_VERSION: "1.99.0"
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
 
     steps:
       - name: Check out exact revision
@@ -30,12 +31,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select Xcode 16+
+      - name: Verify Xcode 26.6
         run: |
           set -euo pipefail
-          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
-          [[ -n "$XCODE_APP" ]] || { echo "Xcode 16+ is required for Swift 6" >&2; exit 1; }
-          sudo xcode-select -s "$XCODE_APP"
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
           swift --version
 
       - name: Cache project-local build state
