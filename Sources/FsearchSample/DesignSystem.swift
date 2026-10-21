@@ -64,7 +64,6 @@ private extension NSColor {
 /// Use native Liquid Glass when available, with an accessible material fallback.
 struct FDGlassSurface: ViewModifier {
     var radius: CGFloat = FDTheme.controlRadius
-    var tint: Color? = nil
     var interactive = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -77,7 +76,7 @@ struct FDGlassSurface: ViewModifier {
                 .background(FDTheme.surfaceFill, in: shape)
                 .overlay(shape.strokeBorder(FDTheme.hairlineColor, lineWidth: 1))
         } else if #available(macOS 26.0, *) {
-            content.glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+            content.glassEffect(.regular.interactive(interactive), in: shape)
         } else {
             content
                 .background(.regularMaterial, in: shape)
@@ -374,19 +373,28 @@ struct FDNoticeBanner: View {
 
 // MARK: - Buttons
 
-struct FDPrimaryButtonStyle: ButtonStyle {
+struct FDPrimaryButtonStyle: PrimitiveButtonStyle {
     var tint: Color = FDTheme.primary
     @Environment(\.isEnabled) private var isEnabled
 
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(FDTheme.onAccent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .fill(tint))
-            .modifier(FDGlassSurface(tint: tint, interactive: isEnabled))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.42)
+        if #available(macOS 26.0, *) {
+            Button(configuration)
+                .buttonStyle(.glassProminent)
+                .tint(tint)
+        } else {
+            Button(action: configuration.trigger) {
+                configuration.label
+                    .foregroundStyle(FDTheme.onAccent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
+                        .fill(tint))
+            }
+            .buttonStyle(.plain)
+            .opacity(isEnabled ? 1 : 0.42)
+        }
     }
 }
 

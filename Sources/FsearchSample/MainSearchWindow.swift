@@ -507,10 +507,11 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.drawsBackground = false
         textView.textColor = .labelColor
         textView.allowsUndo = true
-        textView.font = .preferredFont(forTextStyle: .body)
+        let font = NSFont.preferredFont(forTextStyle: .body)
+        textView.font = font
         textView.insertionPointColor = FDTheme.primaryNSColor
         textView.selectedTextAttributes = [.backgroundColor: FDTheme.selectionNSColor]
-        let lineHeight = textView.layoutManager?.defaultLineHeight(for: textView.font!) ?? 16
+        let lineHeight = textView.layoutManager?.defaultLineHeight(for: font) ?? 16
         textView.textContainerInset = NSSize(width: 4, height: (SearchControlsLayout.queryHeight - lineHeight) / 2)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false

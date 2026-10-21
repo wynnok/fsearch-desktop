@@ -290,10 +290,10 @@ struct PermissionStatusView: View {
         HStack(alignment: .top, spacing: 8) {
             Text("\(number)")
                 .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(FDTheme.onAccent)
+                .foregroundStyle(FDTheme.sage)
                 .frame(width: 17, height: 17)
                 .background(Capsule()
-                    .fill(FDTheme.sage))
+                    .fill(FDTheme.sage.opacity(0.12)))
             Text(text)
                 .font(.system(size: 10.5))
                 .fixedSize(horizontal: false, vertical: true)

@@ -10,7 +10,6 @@ struct SearchQueryField<Content: View>: View {
     var tint: Color = FDTheme.primary
     var onClear: (() -> Void)?
     @ViewBuilder let content: Content
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 9) {
@@ -37,15 +36,13 @@ struct SearchQueryField<Content: View>: View {
         .padding(.horizontal, 11)
         .frame(minWidth: 240, minHeight: SearchControlsLayout.queryHeight,
                maxHeight: SearchControlsLayout.queryHeight)
-        .focused($isFocused)
         .background {
             RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
                 .fill(FDTheme.surfaceFill)
         }
         .overlay {
             RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                .strokeBorder(isFocused ? tint.opacity(0.65) : FDTheme.hairlineColor,
-                              lineWidth: isFocused ? 1.5 : 0.5)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
         }
     }
 }
