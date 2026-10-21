@@ -352,49 +352,35 @@ struct IndexStatusSummary: View {
 
 struct PermissionOnboardingBanner: View {
     @ObservedObject var state: PermissionStatusModel
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         if state.showOnboarding {
-            HStack(spacing: 9) {
-                FDIconTile(symbol: "lock.shield.fill", tint: FDTheme.sage, size: 26)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("让搜索覆盖更多位置")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("完全磁盘访问可改善受保护位置的索引覆盖。")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Button {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield")
+                    .foregroundStyle(FDTheme.sage)
+                Text("完全磁盘访问可改善受保护位置的索引覆盖。")
+                    .foregroundStyle(.secondary)
+                Button("打开设置") {
                     state.openPermissionSettings()
-                } label: {
-                    Label("打开设置", systemImage: "gearshape.fill")
-                        .font(.system(size: 10.5, weight: .medium))
                 }
-                .buttonStyle(FDSecondaryButtonStyle())
-
+                .buttonStyle(.plain)
+                .foregroundStyle(FDTheme.primary)
+                Spacer(minLength: 0)
                 Button {
                     state.skipOnboarding()
                 } label: {
-                    Label("稍后", systemImage: "xmark")
-                        .font(.system(size: 10.5, weight: .medium))
+                    Image(systemName: "xmark")
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .help("稍后设置")
+                .accessibilityLabel("稍后设置")
                 .accessibilityIdentifier("skip-permission-onboarding")
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background {
-                RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                    .fill(FDTheme.sage.opacity(scheme == .dark ? 0.14 : 0.07))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: FDTheme.controlRadius, style: .continuous)
-                    .strokeBorder(FDTheme.sage.opacity(0.18), lineWidth: 0.5)
-            }
+            .font(.system(size: 10.5))
+            .padding(.horizontal, 2)
         }
     }
 }

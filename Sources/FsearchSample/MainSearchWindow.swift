@@ -81,7 +81,6 @@ struct SearchView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(FDTheme.hairlineColor)
             HSplitView {
                 resultsPane
                     .frame(minWidth: 620, idealWidth: 780)
@@ -100,18 +99,7 @@ struct SearchView: View {
         .frame(minWidth: 960, maxWidth: .infinity, minHeight: 680, maxHeight: .infinity)
         .background { FDAuroraBackground() }
         .tint(FDTheme.primary)
-        .toolbar {
-            ToolbarItemGroup {
-                Button {
-                    selectionState.toggleInspector()
-                } label: {
-                    Image(systemName: selectionState.isInspectorVisible ? "sidebar.right" : "sidebar.left")
-                }
-                .help(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
-                .accessibilityLabel(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
-                .tint(FDTheme.primary)
-            }
-        }
+        .ignoresSafeArea(.container, edges: .top)
         .task {
             actions.onFileMutation = model.fileDidChange
             await model.runSmokeIfRequested()
@@ -127,27 +115,47 @@ struct SearchView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                FDBrandMark(size: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Fsearch")
-                        .font(.system(size: 19, weight: .semibold))
-                    Text(model.isEngineMode ? "本机文件搜索" : "样本验证 · 仅受控样本")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                SearchQueryField(
+                    symbol: "magnifyingglass",
+                    tint: FDTheme.slate,
+                    height: 36,
+                    onClear: model.configuration.query.isEmpty
+                        ? nil : { model.configuration.query = "" }
+                ) {
+                    SearchQueryEditor(
+                        text: $model.configuration.query,
+                        focusRequest: model.focusRequest,
+                        placeholder: "搜索文件名…",
+                        height: 36,
+                        onSubmit: model.submit
+                    )
                 }
-                Spacer(minLength: 12)
+                .help("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
+                .accessibilityIdentifier("name-search-explanation")
 
-                IndexStatusSummary(state: model.permissionStatus)
+                if model.busy {
+                    Button(action: model.cancel) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(FDSecondaryButtonStyle())
+                    .help("取消当前查询")
+                    .accessibilityLabel("取消当前查询")
+                }
+
+                SearchSubmitButton(title: "搜索", width: 88, minimumHeight: 26, action: model.submit)
+                    .help("执行文件名搜索")
+                    .accessibilityIdentifier("submit-search")
 
                 Button {
                     showsIndexDetails = true
                 } label: {
-                    Label("权限与索引", systemImage: "lock.shield")
-                        .font(.system(size: 11.5, weight: .medium))
+                    Image(systemName: "lock.shield")
                 }
                 .buttonStyle(FDSecondaryButtonStyle())
+                .help("权限与索引")
+                .accessibilityLabel("权限与索引")
                 .accessibilityIdentifier("permission-index-details")
                 .popover(isPresented: $showsIndexDetails) {
                     PermissionStatusView(state: model.permissionStatus,
@@ -158,57 +166,26 @@ struct SearchView: View {
                 Button {
                     model.showsContentSearch = true
                 } label: {
-                    Label("文本内容搜索", systemImage: "text.magnifyingglass")
-                        .font(.system(size: 11.5, weight: .medium))
+                    Image(systemName: "text.magnifyingglass")
                 }
                 .buttonStyle(FDSecondaryButtonStyle())
                 .disabled(!model.canSearchContent)
-                .help(model.canSearchContent ? "在文件正文中搜索文本" : "样本名称模式不支持正文搜索")
+                .help(model.canSearchContent ? "文本内容搜索" : "样本名称模式不支持正文搜索")
+                .accessibilityLabel("文本内容搜索")
                 .accessibilityIdentifier("content-search")
-            }
 
-            HStack(spacing: 10) {
-                SearchQueryField(
-                    symbol: "magnifyingglass",
-                    tint: FDTheme.slate,
-                    onClear: model.configuration.query.isEmpty
-                        ? nil : { model.configuration.query = "" }
-                ) {
-                    SearchQueryEditor(
-                        text: $model.configuration.query,
-                        focusRequest: model.focusRequest,
-                        placeholder: "输入文件名或名称片段…",
-                        onSubmit: model.submit
-                    )
+                Button {
+                    selectionState.toggleInspector()
+                } label: {
+                    Image(systemName: "sidebar.right")
                 }
-
-                if model.busy {
-                    Button {
-                        model.cancel()
-                    } label: {
-                        Label("取消", systemImage: "xmark")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(FDSecondaryButtonStyle())
-                    .help("取消当前查询")
-                }
-
-                SearchSubmitButton(title: "查询文件名",
-                                   width: SearchControlsLayout.actionWidth,
-                                   action: model.submit)
-                    .help("执行文件名搜索")
-                    .accessibilityIdentifier("submit-search")
+                .buttonStyle(FDSecondaryButtonStyle())
+                .help(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
+                .accessibilityLabel(selectionState.isInspectorVisible ? "隐藏检查器" : "显示检查器")
             }
-
-            HStack(spacing: 5) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                Text("仅搜索文件名，不搜索正文。Return 查询；Shift+Return 输入文件名中的换行。")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityIdentifier("name-search-explanation")
+            // The full-size content shares the title bar; leave the native window buttons clear.
+            .padding(.leading, 68)
+            .frame(minHeight: 40)
 
             controlBar
 
@@ -219,10 +196,10 @@ struct SearchView: View {
                 FDNoticeBanner(text: message, symbol: "exclamationmark.circle.fill", tint: FDTheme.clay)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 16)
-        .background(FDHeaderBackground(accent: FDTheme.slate))
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .background(FDTheme.surfaceFill)
     }
 
     private var controlBar: some View {
@@ -245,6 +222,8 @@ struct SearchView: View {
             Spacer(minLength: 8)
 
             SearchFiltersView(configuration: $model.configuration)
+
+            IndexStatusSummary(state: model.permissionStatus)
         }
     }
 
@@ -308,6 +287,11 @@ struct SearchView: View {
                     .font(.system(size: 12, weight: .medium))
                 Text("搜索结果")
                     .font(.system(size: 12.5, weight: .semibold))
+                if !model.isEngineMode {
+                    Text("受控样本")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
                 if !model.results.isEmpty {
                     FDCountBadge(text: "\(model.results.count)", tint: FDTheme.slate)
                 }
@@ -339,7 +323,7 @@ struct SearchView: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -491,6 +475,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: Int
     let placeholder: String
+    let height: CGFloat
     let onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -512,7 +497,7 @@ private struct SearchQueryEditor: NSViewRepresentable {
         textView.insertionPointColor = FDTheme.primaryNSColor
         textView.selectedTextAttributes = [.backgroundColor: FDTheme.selectionNSColor]
         let lineHeight = textView.layoutManager?.defaultLineHeight(for: font) ?? 16
-        textView.textContainerInset = NSSize(width: 4, height: (SearchControlsLayout.queryHeight - lineHeight) / 2)
+        textView.textContainerInset = NSSize(width: 4, height: (height - lineHeight) / 2)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]

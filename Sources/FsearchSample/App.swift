@@ -1378,6 +1378,7 @@ struct FsearchSampleApp: App {
                     ContentSearchView(state: model.contentSearch)
                 }
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
         .commands {

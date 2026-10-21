@@ -117,6 +117,8 @@ final class SearchWindowLayoutTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        let lifecycle = MainWindowLifecycle()
+        lifecycle.attach(window)
         let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
         window.contentView = host
         window.orderFront(nil)
@@ -136,9 +138,18 @@ final class SearchWindowLayoutTests: XCTestCase {
             let input = try XCTUnwrap(editor.enclosingScrollView)
             let results = try XCTUnwrap(table.enclosingScrollView)
             let visible = window.contentLayoutRect
-            XCTAssertTrue(visible.contains(input.convert(input.bounds, to: nil)), "Search input is clipped at \(size)")
+            XCTAssertTrue(host.bounds.contains(input.convert(input.bounds, to: host)), "Search input is clipped at \(size)")
+            let inputFrame = input.convert(input.bounds, to: host)
+            let topInset = host.isFlipped ? inputFrame.minY : host.bounds.maxY - inputFrame.maxY
+            XCTAssertLessThanOrEqual(topInset, 12, "Search should occupy the top window row at \(size)")
+            let zoom = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+            let zoomFrame = zoom.convert(zoom.bounds, to: host)
+            XCTAssertGreaterThan(inputFrame.minX, zoomFrame.maxX + 8,
+                                 "Search must leave the native window buttons clear")
+            XCTAssertLessThanOrEqual(abs(inputFrame.midY - zoomFrame.midY), 14,
+                                    "Search and window buttons should share a compact title row")
             XCTAssertTrue(visible.contains(results.convert(results.bounds, to: nil)), "Results are clipped at \(size)")
-            XCTAssertGreaterThan(results.bounds.height, 250, "Results should remain the main workspace")
+            XCTAssertGreaterThan(results.bounds.height, 400, "Compact chrome should leave most of the window for results")
             XCTAssertLessThanOrEqual(table.tableColumns.reduce(0) { $0 + $1.width }, results.contentSize.width + 1,
                                      "Result columns should fit without horizontal scrolling at \(size)")
             XCTAssertLessThanOrEqual(table.bounds.width, results.contentSize.width + 1,
