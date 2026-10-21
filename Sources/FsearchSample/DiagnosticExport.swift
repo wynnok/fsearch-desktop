@@ -17,7 +17,7 @@ struct DiagnosticReport: Encodable {
     let coverageSignal: String
 
     init(status: ServiceStatus?, error: Error? = nil, stderr: String? = nil) {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
         clientVersion = Self.safeVersion(version)
         engineVersion = Self.safeEngineVersion(status?.upstreamVersion ?? "")
         #if arch(arm64)

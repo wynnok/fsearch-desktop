@@ -13,7 +13,7 @@ enum UpdatePhase: Equatable {
 final class ManualUpdateState: ObservableObject {
     static let releasesURL = URL(string: "https://github.com/wynnok/fsearch-desktop/releases")!
     static var clientVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
     }
     @Published private(set) var phase: UpdatePhase = .idle
     let currentVersion: String

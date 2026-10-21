@@ -6,8 +6,8 @@
 
 ![Fsearch Desktop 主窗口：文件名搜索、结果列表与检查器](docs/images/main-window.png)
 
-> **当前版本：v0.1.4-unsigned，未签名预发布版。**
-> [Releases](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.4-unsigned) 提供独立的 Apple Silicon、Intel 和 Universal DMG；macOS 首次启动可能阻止运行，需要按说明手动放行。正式签名版尚未发布。当前源码构建的 FsearchDesktop 默认使用真实磁盘引擎，启用文件名与文本内容搜索；未验证项见[支持状态与已知限制](docs/product/support-status.md)。
+> **当前版本：v0.2.0-unsigned，未签名预发布版。**
+> [Releases](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.0-unsigned) 提供独立的 Apple Silicon、Intel 和 Universal DMG；macOS 首次启动可能阻止运行，需要按说明手动放行。正式签名版尚未发布。当前源码构建的 FsearchDesktop 默认使用真实磁盘引擎，启用文件名与文本内容搜索；未验证项见[支持状态与已知限制](docs/product/support-status.md)。
 
 ## 主要功能
 
@@ -23,7 +23,7 @@
 
 ## 快速开始
 
-**未签名预发布版**：从 [v0.1.4-unsigned Release](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.1.4-unsigned) 选择对应芯片的 DMG。该版本没有 Developer ID 签名，也没有经过 Apple 公证，首次启动通常需要在“系统设置 → 隐私与安全性”中手动放行。完整说明见 [v0.1.4-unsigned 发布说明](docs/releases/v0.1.4-unsigned.md)。
+**未签名预发布版**：从 [v0.2.0-unsigned Release](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.0-unsigned) 选择对应芯片的 DMG。该版本没有 Developer ID 签名，也没有经过 Apple 公证，首次启动通常需要在“系统设置 → 隐私与安全性”中手动放行。完整说明见 [v0.2.0-unsigned 发布说明](docs/releases/v0.2.0-unsigned.md)。
 
 下载选择：Apple Silicon Mac 使用 `arm64` 包，Intel Mac 使用 `x86_64` 包；不确定或想统一使用同一个文件时下载 `universal` 包。
 
@@ -47,7 +47,7 @@ bash scripts/package-dev-dmg.sh  # 打包开发 DMG
 
 ## 未签名预发布版
 
-`v0.1.4-unsigned` 是给早期测试者使用的 Pre-release，不是稳定版：
+`v0.2.0-unsigned` 是给早期测试者使用的 Pre-release，不是稳定版：
 
 - 未使用 Developer ID Application 签名，未提交 Apple 公证。
 - 提供 `arm64`、`x86_64` 和 `universal` 三种 DMG；前两种分别只包含对应芯片代码。
@@ -87,7 +87,7 @@ bash scripts/package-dev-dmg.sh  # 打包开发 DMG
 - 支持目标为 macOS 13+、Apple Silicon 与 Intel，但 Intel 与 macOS 13 实机尚未验证。
 - 外接盘与网络卷不在首版默认覆盖范围内；索引大小可能存在精度差异，目录大小不做递归汇总。
 - 应用当前不提供移动、删除、重命名等文件管理操作。
-- 当前 `v0.1.4-unsigned` 未签名、未公证，macOS 可能阻止启动；请按 Release 说明手动放行，不要关闭系统安全保护。
+- 当前 `v0.2.0-unsigned` 未签名、未公证，macOS 可能阻止启动；请按 Release 说明手动放行，不要关闭系统安全保护。
 
 完整支持矩阵与未验证项见[支持状态与已知限制](docs/product/support-status.md)。
 

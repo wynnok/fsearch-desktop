@@ -4,7 +4,7 @@
 
 当前有原生客户端、两架构开发 DMG 和受控样本验收入口，但尚未通过完整 alpha/公众发行门禁。**当前未签名包默认搜索真实磁盘。** 窗口顶部的模式和覆盖说明是判断搜索来源的依据；“所有已覆盖内置位置”不会把样本模式变为全盘搜索。
 
-当前 `v0.1.2-unsigned` 是未 Developer ID 签名、未公证的预发布包，提供 Apple Silicon `arm64`、Intel `x86_64` 和 Universal 三种 DMG。安装后 macOS 可能在 Gatekeeper 中阻止启动，需要在“系统设置 → 隐私与安全性”手动放行；正式签名版仍未发布。Intel 与 macOS 13 实机验收也仍有缺口，不要关闭系统安全保护来代替验证。本版变化见 [发布说明](../releases/v0.1.2-unsigned.md)，下载链路和安装门禁见 [T22](../implementation/T22.md)，旅程报告见 [Wave 4](../implementation/Wave4.md)。
+当前 `v0.2.0-unsigned` 是未 Developer ID 签名、未公证的预发布包，提供 Apple Silicon `arm64`、Intel `x86_64` 和 Universal 三种 DMG。安装后 macOS 可能在 Gatekeeper 中阻止启动，需要在“系统设置 → 隐私与安全性”手动放行；正式签名版仍未发布。Intel 与 macOS 13 实机验收也仍有缺口，不要关闭系统安全保护来代替验证。本版变化见 [发布说明](../releases/v0.2.0-unsigned.md)，下载链路和安装门禁见 [T22](../implementation/T22.md)，旅程报告见 [Wave 4](../implementation/Wave4.md)。
 
 ## 搜索、范围与筛选
 
