@@ -39,6 +39,7 @@ dev_dmg_run_command() {
     done
     if kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null; then
         echo 'Installed application smoke timed out.' >&2
+        sample "$DEV_DMG_SMOKE_PID" 1 1 -file "$log.sample.txt" >/dev/null 2>&1 || true
         dev_dmg_stop_smoke
         return 1
     fi

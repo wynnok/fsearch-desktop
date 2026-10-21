@@ -74,6 +74,16 @@ jobs:
           bash scripts/package-arch-dmg.sh arm64
           bash scripts/package-arch-dmg.sh x86_64
 
+      - name: Preserve installation failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-installation-failure-${{ github.sha }}
+          path: |
+            .build/dev-dmg/verification/
+            .build/desktop-evidence/*.log*
+          if-no-files-found: ignore
+
       - name: Verify unsigned release notes
         run: |
           set -euo pipefail

@@ -465,6 +465,8 @@ final class SearchModel: ObservableObject {
         }
         let arguments = CommandLine.arguments
         guard arguments.count == 4, arguments[2] == "--smoke" else { return }
+        print("Native smoke started")
+        fflush(stdout)
         let output = URL(fileURLWithPath: arguments[3], isDirectory: true)
         defer { try? cleanupSmokeFixtures() }
         do {
@@ -1305,6 +1307,8 @@ final class SearchModel: ObservableObject {
     }
 
     private func capture(_ name: String, under output: URL, window: NSWindow? = nil) async throws {
+        print("Native smoke capturing \(name)")
+        fflush(stdout)
         try await Task.sleep(for: .milliseconds(300))
         guard let view = (window ?? NSApplication.shared.windows.first(where: { $0.isVisible }))?.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
@@ -1316,6 +1320,7 @@ final class SearchModel: ObservableObject {
         }
         try png.write(to: output.appendingPathComponent("\(name).png"))
         print("Native smoke \(name): passed")
+        fflush(stdout)
     }
 }
 

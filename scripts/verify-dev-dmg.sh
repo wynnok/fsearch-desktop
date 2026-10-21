@@ -216,6 +216,10 @@ fi
 
 mkdir -p "$SMOKE_OUTPUT"
 if ! dev_dmg_run_smoke "$INSTALLED_APP/Contents/MacOS/FsearchSample" "$INSTALLED_SAMPLE" "$SMOKE_OUTPUT" "$SMOKE_LOG"; then
+    cp "$SMOKE_LOG" "$DEV_DMG_VERIFICATION_DIR/smoke-failure.log"
+    if [[ -f "$SMOKE_LOG.sample.txt" ]]; then
+        cp "$SMOKE_LOG.sample.txt" "$DEV_DMG_VERIFICATION_DIR/smoke-timeout.sample.txt"
+    fi
     cat "$SMOKE_LOG" >&2
     echo "Installed application smoke failed" >&2
     exit 1
