@@ -225,7 +225,7 @@ if ! dev_dmg_run_smoke "$INSTALLED_APP/Contents/MacOS/FsearchSample" "$INSTALLED
     exit 1
 fi
 cat "$SMOKE_LOG"
-for file in page-final.png responsive-latest.png responsiveness.txt search-journey.json file-journey.json file-actions.json diagnostics.json settings-window-reopened.png manual-update-entry.png file-journey.png; do
+for file in smoke-complete.txt page-final.png responsive-latest.png responsiveness.txt search-journey.json file-journey.json file-actions.json diagnostics.json settings-window-reopened.png manual-update-entry.png file-journey.png; do
     [[ -f "$SMOKE_OUTPUT/$file" ]] || { echo "Installed smoke did not produce $file" >&2; exit 1; }
 done
 grep -q 'Native smoke page-final: passed' "$SMOKE_LOG"

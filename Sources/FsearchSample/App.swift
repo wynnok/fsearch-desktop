@@ -608,6 +608,7 @@ final class SearchModel: ObservableObject {
             try await capture("recovered", under: output)
             #endif
             try cleanupSmokeFixtures()
+            try Data("passed\n".utf8).write(to: output.appendingPathComponent("smoke-complete.txt"))
             NSApplication.shared.terminate(nil)
         } catch {
             try? cleanupSmokeFixtures()
@@ -1373,15 +1374,16 @@ struct FsearchSampleApp: App {
     @StateObject private var model = SearchModel()
 
     init() {
-        if CommandLine.arguments.contains("--smoke") {
-            var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-            arguments["ApplePersistenceIgnoreState"] = true
-            UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        if CommandLine.arguments.contains("--smoke"),
+           let log = ProcessInfo.processInfo.environment["FSEARCH_NATIVE_SMOKE_LOG"] {
+            freopen(log, "a", stdout)
+            freopen(log, "a", stderr)
+            print("Native smoke launch argument count: \(CommandLine.arguments.count)")
+            fflush(stdout)
         }
     }
 
     var body: some Scene {
-
         Window("FsearchDesktop", id: "main-search") {
             SearchView(model: model, selectionState: model.selectionState)
                 .background(MainWindowAttachment())

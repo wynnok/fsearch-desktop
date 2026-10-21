@@ -39,7 +39,11 @@ dev_dmg_run_command() {
     done
     if kill -0 "$DEV_DMG_SMOKE_PID" 2>/dev/null; then
         echo 'Installed application smoke timed out.' >&2
-        sample "$DEV_DMG_SMOKE_PID" 1 1 -file "$log.sample.txt" >/dev/null 2>&1 || true
+        local sample_pid="$DEV_DMG_SMOKE_PID"
+        if [[ -f "$log.pid" ]]; then
+            sample_pid="$(cat "$log.pid")"
+        fi
+        sample "$sample_pid" 1 1 -file "$log.sample.txt" >/dev/null 2>&1 || true
         dev_dmg_stop_smoke
         return 1
     fi
@@ -49,7 +53,11 @@ dev_dmg_run_command() {
 }
 
 dev_dmg_run_smoke() {
-    dev_dmg_run_command "$4" arch "-$(uname -m)" "$1" "$2" --smoke "$3"
+    local launcher="$DEV_DMG_ROOT/installed-smoke-launcher"
+    mkdir -p "$DEV_DMG_ROOT"
+    xcrun swiftc -parse-as-library -module-cache-path "$SWIFTPM_MODULECACHE_OVERRIDE" \
+        "$PROJECT_ROOT/scripts/launch-installed-smoke.swift" -o "$launcher" || return 1
+    dev_dmg_run_command "$4" "$launcher" "$1" "$2" "$3" "$4"
 }
 
 dev_dmg_upstream_version() {
