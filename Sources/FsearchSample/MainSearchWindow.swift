@@ -118,7 +118,7 @@ struct SearchView: View {
         .task(id: InspectorRequestID(snapshot: model.inspectorRefreshID,
                                      paths: selectionState.selectedPaths,
                                      primary: selectionState.selectedPath)) {
-            actions.updatePreview(path: selectionState.selectedPaths.count == 1 ? selectionState.selectedPath : nil)
+            actions.updatePreview(paths: model.results.map(\.path).filter { selectionState.selectedPaths.contains($0) })
             await inspector.select(paths: selectionState.selectedPaths, primary: selectionState.selectedPath)
         }
     }
@@ -617,6 +617,7 @@ private final class NameQueryTextView: NSTextView {
 }
 
 final class FDTableRowView: NSTableRowView {
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         FDTheme.selectionNSColor.setFill()
@@ -877,24 +878,23 @@ private struct ResultsTableView: NSViewRepresentable {
         }
 
         private struct OpenWithTarget {
-            let file: URL
+            let files: [URL]
             let application: URL
         }
 
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
-            let path = parent.selectionState.selectedPaths.count == 1 ? parent.selectionState.selectedPath : nil
-            let url = path.map { URL(fileURLWithPath: $0) }
+            let urls = selectionPaths().map { URL(fileURLWithPath: $0) }
             func add(_ title: String, _ symbol: String, _ selector: Selector) -> NSMenuItem {
                 let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
                 item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
                 item.target = self
-                item.representedObject = url
-                item.isEnabled = url != nil && !parent.actions.isMutating
+                item.representedObject = urls
+                item.isEnabled = !urls.isEmpty && !parent.actions.isMutating
                 menu.addItem(item)
                 return item
             }
-            _ = add(SearchFileAction.open.title, SearchFileAction.open.symbol, #selector(openSelection(_:)))
+            _ = add(urls.count > 1 ? "打开 \(urls.count) 个项目" : SearchFileAction.open.title, SearchFileAction.open.symbol, #selector(openSelection(_:)))
             _ = add(SearchFileAction.preview.title, SearchFileAction.preview.symbol, #selector(previewSelection(_:)))
             _ = add(SearchFileAction.reveal.title, SearchFileAction.reveal.symbol, #selector(revealSelection(_:)))
             _ = add(SearchFileAction.copy.title, SearchFileAction.copy.symbol, #selector(copySelection(_:)))
@@ -902,15 +902,19 @@ private struct ResultsTableView: NSViewRepresentable {
             let openWith = add("打开方式", "arrow.up.forward.square", #selector(openSelection(_:)))
             let applications = NSMenu()
             applications.autoenablesItems = false
-            if let url {
+            if let url = urls.first {
                 let workspace = NSWorkspace.shared
-                let defaultApplication = workspace.urlForApplication(toOpen: url)
-                for application in workspace.urlsForApplications(toOpen: url) {
+                let defaultApplications = urls.compactMap { workspace.urlForApplication(toOpen: $0) }
+                let defaultApplication = Set(defaultApplications).count == 1 && defaultApplications.count == urls.count ? defaultApplications.first : nil
+                let common = urls.dropFirst().reduce(Set(workspace.urlsForApplications(toOpen: url))) {
+                    $0.intersection(workspace.urlsForApplications(toOpen: $1))
+                }
+                for application in common.sorted(by: { $0.path < $1.path }) {
                     let name = FileManager.default.displayName(atPath: application.path)
                     let item = NSMenuItem(title: name + (application == defaultApplication ? "（默认）" : ""),
                                           action: #selector(openWithApplication(_:)), keyEquivalent: "")
                     item.target = self
-                    item.representedObject = OpenWithTarget(file: url, application: application)
+                    item.representedObject = OpenWithTarget(files: urls, application: application)
                     item.image = workspace.icon(forFile: application.path).copy() as? NSImage
                     item.image?.size = NSSize(width: 16, height: 16)
                     applications.addItem(item)
@@ -918,51 +922,46 @@ private struct ResultsTableView: NSViewRepresentable {
                 if !applications.items.isEmpty { applications.addItem(.separator()) }
                 let other = NSMenuItem(title: "其他…", action: #selector(chooseApplication(_:)), keyEquivalent: "")
                 other.target = self
-                other.representedObject = url
+                other.representedObject = urls
                 applications.addItem(other)
             }
             openWith.submenu = applications
             menu.addItem(.separator())
             _ = add("显示简介", "info.circle", #selector(infoSelection(_:)))
-            _ = add("重命名…", "pencil", #selector(renameSelection(_:)))
+            add("重命名…", "pencil", #selector(renameSelection(_:))).isEnabled = urls.count == 1 && !parent.actions.isMutating
+            _ = add("复制", "doc.on.doc", #selector(copyFilesSelection(_:)))
             menu.addItem(.separator())
             _ = add("移到废纸篓", "trash", #selector(trashSelection(_:)))
             _ = add("永久删除…", "trash.slash", #selector(deleteSelection(_:)))
         }
 
-        private func singleSelection(_ sender: Any? = nil) -> String? {
-            if let item = sender as? NSMenuItem { return (item.representedObject as? URL)?.path }
-            guard parent.selectionState.selectedPaths.count == 1 else {
-                parent.actions.requireSingleSelection()
-                return nil
+        private func selectionPaths(_ sender: Any? = nil) -> [String] {
+            if let item = sender as? NSMenuItem {
+                return (item.representedObject as? [URL] ?? []).map(\.path)
             }
-            return parent.selectionState.selectedPath
+            return parent.results.map(\.path).filter { parent.selectionState.selectedPaths.contains($0) }
         }
 
-        @objc func openSelection(_ sender: Any? = nil) {
-            guard let path = singleSelection(sender) else { return }
-            parent.actions.open(path: path)
+        private func singleSelection(_ sender: Any? = nil) -> String? {
+            let paths = selectionPaths(sender)
+            guard paths.count == 1 else { parent.actions.requireSingleSelection(); return nil }
+            return paths.first
         }
-        @objc func revealSelection(_ sender: Any? = nil) {
-            guard let path = singleSelection(sender) else { return }
-            parent.actions.reveal(path: path)
-        }
-        @objc func copySelection(_ sender: Any? = nil) {
-            guard let path = singleSelection(sender) else { return }
-            parent.actions.copy(path: path)
-        }
-        @objc func previewSelection(_ sender: Any? = nil) {
-            guard let path = singleSelection(sender) else { return }
-            parent.actions.togglePreview(path: path)
-        }
+
+        @objc func openSelection(_ sender: Any? = nil) { parent.actions.open(paths: selectionPaths(sender)) }
+        @objc func revealSelection(_ sender: Any? = nil) { parent.actions.reveal(paths: selectionPaths(sender)) }
+        @objc func copySelection(_ sender: Any? = nil) { parent.actions.copy(paths: selectionPaths(sender)) }
+        @objc func copyFilesSelection(_ sender: Any? = nil) { parent.actions.copyFiles(paths: selectionPaths(sender)) }
+        @objc func previewSelection(_ sender: Any? = nil) { parent.actions.togglePreview(paths: selectionPaths(sender)) }
 
         @objc func openWithApplication(_ sender: NSMenuItem) {
             guard let target = sender.representedObject as? OpenWithTarget else { return }
-            parent.actions.open(path: target.file.path, with: target.application)
+            parent.actions.open(paths: target.files.map(\.path), with: target.application)
         }
 
         @objc func chooseApplication(_ sender: NSMenuItem) {
-            guard let path = singleSelection(sender), let window = table?.window else { return }
+            let paths = selectionPaths(sender)
+            guard !paths.isEmpty, let window = table?.window else { return }
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.applicationBundle]
             panel.directoryURL = URL(fileURLWithPath: "/Applications")
@@ -970,14 +969,11 @@ private struct ResultsTableView: NSViewRepresentable {
             panel.prompt = "打开"
             panel.beginSheetModal(for: window) { [self] response in
                 guard response == .OK, let application = panel.url else { return }
-                parent.actions.open(path: path, with: application)
+                parent.actions.open(paths: paths, with: application)
             }
         }
 
-        @objc func infoSelection(_ sender: NSMenuItem) {
-            guard let path = singleSelection(sender) else { return }
-            parent.actions.showInfo(path: path)
-        }
+        @objc func infoSelection(_ sender: NSMenuItem) { parent.actions.showInfo(paths: selectionPaths(sender)) }
 
         @objc func renameSelection(_ sender: NSMenuItem) {
             guard let path = singleSelection(sender) else { return }
@@ -985,14 +981,14 @@ private struct ResultsTableView: NSViewRepresentable {
         }
 
         @objc func trashSelection(_ sender: NSMenuItem) {
-            guard let path = singleSelection(sender) else { return }
-            Task { await parent.actions.moveToTrash(path: path) }
+            let paths = selectionPaths(sender)
+            Task { await parent.actions.moveToTrash(paths: paths) }
         }
 
         @objc func deleteSelection(_ sender: NSMenuItem) {
-            guard let path = singleSelection(sender) else { return }
+            let paths = selectionPaths(sender)
             let window = table?.window
-            Task { await parent.actions.permanentlyDelete(path: path, in: window) }
+            Task { await parent.actions.permanentlyDelete(paths: paths, in: window) }
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {

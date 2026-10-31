@@ -184,7 +184,7 @@ final class SearchWindowLayoutTests: XCTestCase {
                        SearchFooterLayout.pathContentLeadingInset)
     }
 
-    func testResultMenuUsesSharedActionNamesAndIconsAndRequiresSingleSelection() async throws {
+    func testResultMenuUsesSharedActionsAndSupportsMultipleSelection() async throws {
         _ = NSApplication.shared
         let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
@@ -210,7 +210,9 @@ final class SearchWindowLayoutTests: XCTestCase {
         XCTAssertTrue(menu.items.prefix(4).allSatisfy(\.isEnabled))
         model.selectionState.select(paths: Set(model.results.map(\.path)), primary: first.path)
         menu.delegate?.menuNeedsUpdate?(menu)
-        XCTAssertTrue(menu.items.prefix(4).allSatisfy { !$0.isEnabled })
+        XCTAssertTrue(menu.items.filter { !$0.isSeparatorItem && $0.title != "重命名…" }.allSatisfy(\.isEnabled))
+        XCTAssertFalse(try XCTUnwrap(menu.items.first { $0.title == "重命名…" }).isEnabled)
+        XCTAssertEqual(menu.items.first?.title, "打开 \(model.results.count) 个项目")
     }
 
     private func firstView<T: NSView>(of type: T.Type, in view: NSView) -> T? {

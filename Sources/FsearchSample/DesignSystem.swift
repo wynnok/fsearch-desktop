@@ -27,7 +27,7 @@ enum FDTheme {
     static let cardRadius: CGFloat = 16
     static let controlRadius: CGFloat = 12
 
-    static let selectionNSColor = nsAdaptive("selection-ns", light: 0xD9EBFA, dark: 0x254B6A)
+    static let selectionNSColor = nsAdaptive("selection-ns", light: 0xBDD9F2, dark: 0x315C7C)
     static let highlightNSColor = nsAdaptive("highlight-ns", light: 0xF1CB75, dark: 0x9A7126, alpha: 0.50)
     static let headerNSColor = nsAdaptive("header-ns", light: 0xF4F6F8, dark: 0x20252B)
     static let surfaceNSColor = nsAdaptive("surface-ns", light: 0xFFFFFF, dark: 0x22262B)

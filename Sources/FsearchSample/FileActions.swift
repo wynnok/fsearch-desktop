@@ -8,6 +8,8 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     typealias DeletionConfirmation = @MainActor (URL, NSWindow?, @escaping @MainActor (Bool) -> Void) -> Void
     typealias Recycler = @MainActor (URL, @escaping @Sendable (Error?) -> Void) -> Void
     typealias InformationPresenter = @MainActor (URL) throws -> Void
+    typealias BatchDeletionConfirmation = @MainActor ([URL], NSWindow?, @escaping @MainActor (Bool) -> Void) -> Void
+    private let confirmBatchDeletion: BatchDeletionConfirmation
     private let confirmDeletion: DeletionConfirmation
     private let recycle: Recycler
     private let information: InformationPresenter
@@ -15,14 +17,17 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     @Published private(set) var isMutating = false
     var onFileMutation: ((String, String?) -> Void)?
     private(set) var previewURL: URL?
+    private(set) var previewURLs: [URL] = []
     private(set) var openedURL: URL?
     private(set) var revealedURL: URL?
     var movePreviewSelection: ((Int) -> Void)?
 
     init(confirmDeletion: @escaping DeletionConfirmation = FileActionState.presentDeletionConfirmation,
+         confirmBatchDeletion: @escaping BatchDeletionConfirmation = FileActionState.presentBatchDeletionConfirmation,
          recycle: @escaping Recycler = FileActionState.recycleItem,
          information: @escaping InformationPresenter = FinderInformation.show) {
         self.confirmDeletion = confirmDeletion
+        self.confirmBatchDeletion = confirmBatchDeletion
         self.recycle = recycle
         self.information = information
         super.init()
@@ -86,6 +91,59 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
         message = "已复制完整路径"
+    }
+
+    private func accessibleURLs(paths: [String]) -> [URL]? {
+        guard !paths.isEmpty else { message = "请先选择结果"; return nil }
+        var urls: [URL] = []
+        for path in paths {
+            guard let url = accessibleURL(path: path) else { return nil }
+            urls.append(url)
+        }
+        return urls
+    }
+
+    func open(paths: [String], with application: URL? = nil) {
+        guard let urls = accessibleURLs(paths: paths) else { return }
+        if let application {
+            NSWorkspace.shared.open(urls, withApplicationAt: application, configuration: NSWorkspace.OpenConfiguration()) { @Sendable _, error in
+                Task { @MainActor in
+                    if let error { self.message = "系统无法打开：\(error.localizedDescription)" }
+                    else { self.openedURL = urls.first }
+                }
+            }
+        } else {
+            for url in urls { open(path: url.path) }
+        }
+    }
+
+    func reveal(paths: [String]) {
+        guard let urls = accessibleURLs(paths: paths) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+        revealedURL = urls.first
+    }
+
+    func showInfo(paths: [String]) {
+        var errors: [String] = []
+        for path in paths {
+            showInfo(path: path)
+            if let message { errors.append(message) }
+        }
+        if !errors.isEmpty { message = errors.joined(separator: "\n") }
+    }
+
+    func copy(paths: [String]) {
+        guard !paths.isEmpty else { message = "请先选择结果"; return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+        message = "已复制 \(paths.count) 个完整路径"
+    }
+
+    func copyFiles(paths: [String]) {
+        guard !paths.isEmpty else { message = "请先选择结果"; return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects(paths.map { NSURL(fileURLWithPath: $0) })
+        message = "已复制 \(paths.count) 个项目"
     }
 
     func rename(path: String?, to name: String) async {
@@ -168,6 +226,89 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
         }
     }
 
+    func permanentlyDelete(paths: [String], in window: NSWindow?) async {
+        if paths.count == 1 { await permanentlyDelete(path: paths[0], in: window); return }
+        await mutate(paths: paths, permanently: true, in: window)
+    }
+
+    func moveToTrash(paths: [String]) async {
+        if paths.count == 1 { await moveToTrash(path: paths[0]); return }
+        await mutate(paths: paths, permanently: false, in: nil)
+    }
+
+    private func mutate(paths: [String], permanently: Bool, in window: NSWindow?) async {
+        guard !isMutating, !paths.isEmpty else { return }
+        isMutating = true
+        defer { isMutating = false }
+        var errors: [String] = []
+        let urls = paths.compactMap { path -> URL? in
+            guard let url = mutationURL(path: path) else {
+                errors.append("\(path)：\(message ?? "无法访问")")
+                return nil
+            }
+            return url
+        }
+        // A selected directory already includes its selected descendants; do not delete twice.
+        let targets = urls.filter { url in
+            !urls.contains { parent in
+                parent != url && url.path.hasPrefix(parent.path + "/") &&
+                    (try? FileManager.default.attributesOfItem(atPath: parent.path)[.type] as? FileAttributeType) == .typeDirectory
+            }
+        }
+        var identities: [URL: (device: UInt64, inode: UInt64)] = [:]
+        if permanently {
+            for url in targets {
+                do { identities[url] = try Self.entryIdentity(url) }
+                catch { errors.append("\(url.path)：\(error.localizedDescription)") }
+            }
+            guard !identities.isEmpty else { message = errors.joined(separator: "\n"); return }
+            let confirmed = await withCheckedContinuation { continuation in
+                confirmBatchDeletion(targets, window) { continuation.resume(returning: $0) }
+            }
+            guard confirmed else { return }
+        }
+        var succeeded = 0
+        for url in targets {
+            do {
+                if permanently {
+                    guard let identity = identities[url] else { continue }
+                    let deleted = try await Task.detached(priority: .userInitiated) {
+                        guard try Self.entryIdentity(url) == identity else { return false }
+                        try FileManager.default.removeItem(at: url)
+                        return true
+                    }.value
+                    guard deleted else { errors.append("\(url.path)：项目在确认期间已改变"); continue }
+                } else {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        recycle(url) { error in
+                            if let error { continuation.resume(throwing: error) }
+                            else { continuation.resume() }
+                        }
+                    }
+                }
+                succeeded += 1
+                for affected in urls where affected == url || affected.path.hasPrefix(url.path + "/") {
+                    finishMutation(affected, newURL: nil, message: "")
+                }
+            } catch { errors.append("\(url.path)：\(error.localizedDescription)") }
+        }
+        message = "\(permanently ? "永久删除" : "移到废纸篓")：成功 \(succeeded) 项，失败 \(errors.count) 项"
+            + (errors.isEmpty ? "" : "\n" + errors.joined(separator: "\n"))
+    }
+
+    static func deletionAlert(for urls: [URL]) -> NSAlert {
+        if urls.count == 1 { return deletionAlert(for: urls[0]) }
+        let alert = deletionAlert(for: urls.first ?? URL(fileURLWithPath: "/"))
+        alert.messageText = "要永久删除 \(urls.count) 个项目吗？"
+        alert.informativeText = "此操作不会移到废纸篓，无法撤销。文件夹中的所有项目也会被删除。\n\n"
+            + urls.map(\.path).joined(separator: "\n")
+        return alert
+    }
+
+    private static func presentBatchDeletionConfirmation(_ urls: [URL], _ window: NSWindow?, _ decision: @escaping @MainActor (Bool) -> Void) {
+        presentAlert(deletionAlert(for: urls), in: window) { decision($0 == .alertSecondButtonReturn) }
+    }
+
     private static func recycleItem(_ url: URL, _ completion: @escaping @Sendable (Error?) -> Void) {
         NSWorkspace.shared.recycle([url]) { newURLs, error in
             completion(error ?? (newURLs[url] == nil ? CocoaError(.fileWriteUnknown) : nil))
@@ -223,32 +364,53 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     }
 
     private func finishMutation(_ url: URL, newURL: URL?, message: String) {
-        if previewURL == url { updatePreview(path: nil) }
+        if previewURLs.contains(url) { updatePreview(paths: previewURLs.filter { $0 != url }.map(\.path)) }
         self.message = message
         onFileMutation?(url.path, newURL?.path)
     }
 
-    func togglePreview(path: String?) {
+    func togglePreview(path: String?) { togglePreview(paths: path.map { [$0] } ?? []) }
+
+    func togglePreview(paths: [String]) {
         guard let panel = QLPreviewPanel.shared() else { message = "系统快速查看不可用"; return }
-        if panel.isVisible { previewURL = nil; panel.order(.out, relativeTo: 0); return }
-        guard let url = previewableURL(path: path) else { return }
-        previewURL = url
+        if panel.isVisible {
+            previewURL = nil
+            previewURLs = []
+            panel.orderOut(nil)
+            return
+        }
+        guard setPreview(paths: paths) else { return }
         panel.dataSource = self
         panel.delegate = self
+        panel.currentPreviewItemIndex = 0
         panel.makeKeyAndOrderFront(nil)
         panel.reloadData()
     }
 
-    func updatePreview(path: String?) {
+    func updatePreview(path: String?) { updatePreview(paths: path.map { [$0] } ?? []) }
+
+    func updatePreview(paths: [String]) {
         guard previewURL != nil, QLPreviewPanel.sharedPreviewPanelExists(),
               let panel = QLPreviewPanel.shared(), panel.isVisible else { return }
-        guard let url = previewableURL(path: path) else {
+        guard setPreview(paths: paths) else {
             previewURL = nil
-            panel.order(.out, relativeTo: 0)
+            previewURLs = []
+            panel.orderOut(nil)
             return
         }
-        previewURL = url
         panel.reloadData()
+    }
+
+    private func setPreview(paths: [String]) -> Bool {
+        guard !paths.isEmpty else { return false }
+        var urls: [URL] = []
+        for path in paths {
+            guard let url = previewableURL(path: path) else { return false }
+            urls.append(url)
+        }
+        previewURLs = urls
+        previewURL = urls.first
+        return true
     }
 
     private func previewableURL(path: String?) -> URL? {
@@ -261,17 +423,20 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
         return url
     }
 
-    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { previewURL == nil ? 0 : 1 }
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { previewURLs.count }
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
-        previewURL as NSURL?
+        guard previewURLs.indices.contains(index) else { return nil }
+        return previewURLs[index] as NSURL
     }
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         if event.type == .keyDown && (event.keyCode == 53 || event.keyCode == 49) {
             previewURL = nil
+            previewURLs = []
             panel.order(.out, relativeTo: 0)
             return true
         }
         if event.type == .keyDown && (event.keyCode == 125 || event.keyCode == 126) {
+            if previewURLs.count > 1 { return false }
             // Return arrows to the result table, whose selection updates this panel.
             movePreviewSelection?(event.keyCode == 125 ? 1 : -1)
             return true

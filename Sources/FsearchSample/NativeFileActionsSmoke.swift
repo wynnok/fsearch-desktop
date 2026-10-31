@@ -39,7 +39,7 @@ enum NativeFileActionsSmoke {
             menu.delegate?.menuNeedsUpdate?(menu)
             let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
             checks["contextMenuRequestedActions"] = titles == ["打开", "快速查看", "在 Finder 中显示", "复制路径",
-                "打开方式", "显示简介", "重命名…", "移到废纸篓", "永久删除…"]
+                "打开方式", "显示简介", "重命名…", "复制", "移到废纸篓", "永久删除…"]
             checks["contextMenuIcons"] = menu.items.filter { !$0.isSeparatorItem }.allSatisfy { $0.image != nil }
             checks["openWithListsApplications"] = menu.items.first(where: { $0.title == "打开方式" })?.submenu?.items.isEmpty == false
         }
@@ -97,6 +97,12 @@ enum NativeFileActionsSmoke {
         window.makeFirstResponder(table)
         table.keyDown(with: try event(49, " "))
         checks["spacePreviewTarget"] = QLPreviewPanel.shared()?.isVisible == true && actions.previewURL == first
+        actions.updatePreview(paths: [firstPath + ".does-not-exist", firstPath])
+        checks["multiPreviewFailureExplained"] = actions.message?.contains("文件已移动、删除") == true
+        if let panel = QLPreviewPanel.shared() {
+            for _ in 0..<250 where panel.isVisible { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        table.keyDown(with: try event(49, " "))
         table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
         try await Task.sleep(for: .milliseconds(150))
         checks["selectionUpdatesPreview"] = actions.previewURL?.path == selectionState.selectedPath
@@ -146,8 +152,11 @@ enum NativeFileActionsSmoke {
         try await Task.sleep(for: .milliseconds(100))
         checks["multiSelectionPreserved"] = selectionState.selectedPaths.count == 2
         checks["multiSelectionClearsPath"] = pathBar.url == nil && pathBar.pathItems.isEmpty
-        table.keyDown(with: try event(36, "\r"))
-        checks["multiActionExplained"] = actions.message?.contains("请选择单个") == true
+        if let menu = table.menu {
+            menu.delegate?.menuNeedsUpdate?(menu)
+            checks["multiActionsEnabled"] = menu.items.filter { !$0.isSeparatorItem && $0.title != "重命名…" }.allSatisfy(\.isEnabled)
+            checks["multiRenameDisabled"] = menu.items.first { $0.title == "重命名…" }?.isEnabled == false
+        }
         table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         actions.open(path: firstPath + ".does-not-exist")
         checks["missingTargetExplained"] = actions.message?.contains("移动、删除") == true
