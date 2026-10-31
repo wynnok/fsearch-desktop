@@ -5,10 +5,6 @@ import Quartz
 @MainActor
 enum NativeFileActionsSmoke {
     static func run(window: NSWindow, selectionState: SearchSelectionState) async throws -> [String: Bool] {
-        func checkpoint(_ name: String) {
-            print("[DEBUG-ci-native-actions] \(name)")
-            fflush(stdout)
-        }
         func findView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
             if let match = view as? T { return match }
             for child in view.subviews { if let match = findView(of: type, in: child) { return match } }
@@ -34,13 +30,11 @@ enum NativeFileActionsSmoke {
         try await Task.sleep(for: .milliseconds(100))
         guard let firstPath = selectionState.selectedPath else { throw FsearchError.bridge("无选中目标") }
         let first = URL(fileURLWithPath: firstPath)
-        checkpoint("open")
         table.keyDown(with: try event(36, "\r"))
         for _ in 0..<100 where actions.openedURL == nil && actions.message == nil {
             try await Task.sleep(for: .milliseconds(30))
         }
         var checks = ["enterOpenNativeTarget": actions.openedURL == first]
-        checkpoint("context-menu")
         if let menu = table.menu {
             menu.delegate?.menuNeedsUpdate?(menu)
             let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
@@ -50,19 +44,16 @@ enum NativeFileActionsSmoke {
             checks["openWithListsApplications"] = menu.items.first(where: { $0.title == "打开方式" })?.submenu?.items.isEmpty == false
         }
         if let doubleAction = table.doubleAction {
-            checkpoint("double-click")
             NSApplication.shared.sendAction(doubleAction, to: table.target, from: table)
             for _ in 0..<100 where actions.openedURL == nil && actions.message == nil {
                 try await Task.sleep(for: .milliseconds(30))
             }
         }
         checks["doubleClickNativeTarget"] = actions.openedURL == first
-        checkpoint("copy-path")
         if let copyItem = table.menu?.items.first(where: { $0.title == "复制路径" }), let action = copyItem.action {
             NSApplication.shared.sendAction(action, to: copyItem.target, from: copyItem)
         }
         checks["contextCopyFullPath"] = NSPasteboard.general.string(forType: .string) == firstPath
-        checkpoint("finder-reveal")
         if let revealItem = table.menu?.items.first(where: { $0.title == "在 Finder 中显示" }), let action = revealItem.action {
             NSApplication.shared.sendAction(action, to: revealItem.target, from: revealItem)
         }
@@ -73,7 +64,6 @@ enum NativeFileActionsSmoke {
             checks["finderInformationWindowRequest"] = actions.message == nil
         }
         let folder = first.deletingLastPathComponent()
-        checkpoint("path-navigation")
         func folderElement(in element: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
             if element.accessibilityURL()?.path == folder.path
                 || element.accessibilityTitle() == folder.lastPathComponent
@@ -105,22 +95,18 @@ enum NativeFileActionsSmoke {
         checks["pathFolderSingleClickTarget"] = actions.openedURL == folder
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(table)
-        checkpoint("preview-open")
         table.keyDown(with: try event(49, " "))
         checks["spacePreviewTarget"] = QLPreviewPanel.shared()?.isVisible == true && actions.previewURL == first
-        checkpoint("preview-invalid-selection")
         actions.updatePreview(paths: [firstPath + ".does-not-exist", firstPath])
         checks["multiPreviewFailureExplained"] = actions.message?.contains("文件已移动、删除") == true
         if let panel = QLPreviewPanel.shared() {
             for _ in 0..<250 where panel.isVisible { try await Task.sleep(for: .milliseconds(20)) }
         }
         table.keyDown(with: try event(49, " "))
-        checkpoint("preview-selection-change")
         table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
         try await Task.sleep(for: .milliseconds(150))
         checks["selectionUpdatesPreview"] = actions.previewURL?.path == selectionState.selectedPath
         if let panel = QLPreviewPanel.shared() {
-            checkpoint("preview-close")
             _ = actions.previewPanel(panel, handle: try event(53, "\u{1b}"))
             actions.updatePreview(path: selectionState.selectedPath)
             // Quick Look's preview service can finish closing asynchronously.
@@ -128,27 +114,29 @@ enum NativeFileActionsSmoke {
             checks["escapeClosesPreview"] = !panel.isVisible && actions.previewURL == nil
         }
         if let deleteItem = table.menu?.items.first(where: { $0.title == "永久删除…" }), let action = deleteItem.action {
-            checkpoint("delete-confirmation")
+            // Finder and document open requests can take focus during this journey.
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             // The menu still represents the first item, even though selection moved to the second.
             NSApplication.shared.sendAction(action, to: deleteItem.target, from: deleteItem)
-            checkpoint("delete-action-sent")
-            for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
-            guard let sheet = window.attachedSheet, let cancel = sheet.defaultButtonCell?.controlView as? NSButton else {
-                throw FsearchError.bridge("永久删除确认窗口未出现或没有默认取消按钮")
+            // Attachment precedes the sheet becoming visible.
+            for _ in 0..<250 where window.attachedSheet?.isVisible != true {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            guard let sheet = window.attachedSheet, sheet.isVisible,
+                  let cancel = sheet.defaultButtonCell?.controlView as? NSButton,
+                  cancel.title == "取消", cancel.isEnabled else {
+                throw FsearchError.bridge("永久删除确认窗口未就绪或没有可用的默认取消按钮")
             }
             checks["permanentDeleteDefaultsToCancel"] = cancel.title == "取消"
-            checkpoint("delete-sheet-present")
             func containsTargetName(_ view: NSView) -> Bool {
                 if let text = view as? NSTextField, text.stringValue.contains(first.lastPathComponent) { return true }
                 return view.subviews.contains { containsTargetName($0) }
             }
             checks["permanentDeleteKeepsOriginalMenuTarget"] = sheet.contentView.map(containsTargetName) == true
-            checkpoint("delete-sheet-inspected")
             cancel.performClick(nil)
-            checkpoint("delete-cancel-clicked")
             for _ in 0..<100 where window.attachedSheet != nil || actions.isMutating { try await Task.sleep(for: .milliseconds(20)) }
             checks["permanentDeleteCancelPreservesFile"] = FileManager.default.fileExists(atPath: first.path)
-            checkpoint("delete-cancel-complete")
         }
         if let scroll = table.enclosingScrollView {
             // Large native rows make scrolling observable with the small controlled fixture.

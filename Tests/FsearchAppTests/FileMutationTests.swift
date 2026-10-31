@@ -96,15 +96,25 @@ final class FileMutationTests: XCTestCase {
         defer { window.orderOut(nil) }
         let actions = FileActionState()
         let deletion = Task { await actions.permanentlyDelete(path: file.path, in: window) }
-        for _ in 0..<100 where window.attachedSheet == nil {
+        defer {
+            if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .abort) }
+            deletion.cancel()
+        }
+        for _ in 0..<250 where window.attachedSheet?.isVisible != true {
             try await Task.sleep(for: .milliseconds(20))
         }
         let sheet = try XCTUnwrap(window.attachedSheet)
+        XCTAssertTrue(sheet.isVisible)
         let cancel = try XCTUnwrap(sheet.defaultButtonCell?.controlView as? NSButton)
         XCTAssertEqual(cancel.title, "取消")
+        XCTAssertTrue(cancel.isEnabled)
         cancel.performClick(nil)
-        await deletion.value
+        for _ in 0..<250 where actions.isMutating {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertFalse(actions.isMutating)
+        guard !actions.isMutating else { return }
+        await deletion.value
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "keep me")
     }
 
