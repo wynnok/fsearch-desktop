@@ -131,19 +131,24 @@ enum NativeFileActionsSmoke {
             checkpoint("delete-confirmation")
             // The menu still represents the first item, even though selection moved to the second.
             NSApplication.shared.sendAction(action, to: deleteItem.target, from: deleteItem)
+            checkpoint("delete-action-sent")
             for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
             guard let sheet = window.attachedSheet, let cancel = sheet.defaultButtonCell?.controlView as? NSButton else {
                 throw FsearchError.bridge("永久删除确认窗口未出现或没有默认取消按钮")
             }
             checks["permanentDeleteDefaultsToCancel"] = cancel.title == "取消"
+            checkpoint("delete-sheet-present")
             func containsTargetName(_ view: NSView) -> Bool {
                 if let text = view as? NSTextField, text.stringValue.contains(first.lastPathComponent) { return true }
                 return view.subviews.contains { containsTargetName($0) }
             }
             checks["permanentDeleteKeepsOriginalMenuTarget"] = sheet.contentView.map(containsTargetName) == true
+            checkpoint("delete-sheet-inspected")
             cancel.performClick(nil)
+            checkpoint("delete-cancel-clicked")
             for _ in 0..<100 where window.attachedSheet != nil || actions.isMutating { try await Task.sleep(for: .milliseconds(20)) }
             checks["permanentDeleteCancelPreservesFile"] = FileManager.default.fileExists(atPath: first.path)
+            checkpoint("delete-cancel-complete")
         }
         if let scroll = table.enclosingScrollView {
             // Large native rows make scrolling observable with the small controlled fixture.

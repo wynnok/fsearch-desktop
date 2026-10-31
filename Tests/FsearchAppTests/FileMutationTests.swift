@@ -84,6 +84,30 @@ final class FileMutationTests: XCTestCase {
         XCTAssertTrue(alert.informativeText.contains("无法撤销"))
     }
 
+    func testCancellingNativeDeletionSheetPreservesTheFile() async throws {
+        _ = NSApplication.shared
+        let directory = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("report.txt")
+        try Data("keep me".utf8).write(to: file)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        let actions = FileActionState()
+        let deletion = Task { await actions.permanentlyDelete(path: file.path, in: window) }
+        for _ in 0..<100 where window.attachedSheet == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        let cancel = try XCTUnwrap(sheet.defaultButtonCell?.controlView as? NSButton)
+        XCTAssertEqual(cancel.title, "取消")
+        cancel.performClick(nil)
+        await deletion.value
+        XCTAssertFalse(actions.isMutating)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "keep me")
+    }
+
     func testTrashUsesTheSystemRecyclerForOnlyTheRequestedItem() async throws {
         let directory = try fixtureDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

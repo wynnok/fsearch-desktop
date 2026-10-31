@@ -221,6 +221,7 @@ if ! dev_dmg_run_smoke "$INSTALLED_APP/Contents/MacOS/FsearchSample" "$INSTALLED
         cp "$SMOKE_LOG.sample.txt" "$DEV_DMG_VERIFICATION_DIR/smoke-timeout.sample.txt"
     fi
     cat "$SMOKE_LOG" >&2
+    /usr/bin/log show --last 1m --style compact --predicate 'process == "FsearchSample"' >&2 || true
     ruby -rjson - "$HOME/Library/Logs/DiagnosticReports" <<'RUBY' >&2
 Dir.glob(File.join(ARGV[0], "{FsearchSample,FsearchDesktop}*.ips")).each do |path|
   report = JSON.parse(File.readlines(path).drop(1).join)
