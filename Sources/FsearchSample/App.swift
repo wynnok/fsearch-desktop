@@ -99,18 +99,6 @@ final class SearchModel: ObservableObject {
             return "已显示 \(results.count) / \(total) 个匹配 · \(sortDescription)"
         }
     }
-    var paginationMessage: String? {
-        guard let controller else { return nil }
-        switch controller.phase {
-        case .partial:
-            return "部分结果"
-        case .complete:
-            guard let total = controller.totalCount, total > 0 else { return nil }
-            return nextCursor == nil ? "已载入全部 \(total) 个结果" : "还可继续载入同一快照"
-        default:
-            return nil
-        }
-    }
     var statusKind: SearchStatusKind {
         if validationMessage != nil { return .error }
         guard let controller else { return .prompt }
@@ -1199,7 +1187,7 @@ final class SearchModel: ObservableObject {
             try require(visible.contains(input.convert(input.bounds, to: nil)), "Native search input is clipped")
             try require(visible.contains(resultFrame) && resultFrame.height >= 250,
                         "Native results workspace is clipped or too small")
-            try require(resultFrame.minY - visible.minY >= 60, "Native bottom actions are clipped")
+            try require(resultFrame.minY - visible.minY >= 44, "Native bottom actions are clipped")
             try require(table.tableColumns.reduce(0) { $0 + $1.width } <= results.contentSize.width + 1,
                         "Native result columns require horizontal scrolling")
             try require(table.bounds.width <= results.contentSize.width + 1, "Native table viewport is clipped")

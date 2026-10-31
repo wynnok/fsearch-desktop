@@ -100,7 +100,6 @@ struct FileInspectorView: View {
     @ObservedObject var state: FileInspectorState
     var path: String?
     @ObservedObject var actions: FileActionState
-    var onClose: () -> Void
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -140,13 +139,9 @@ struct FileInspectorView: View {
             Text("检查器")
                 .font(.system(size: 12.5, weight: .semibold))
             Spacer()
-            FDActionIconButton(symbol: "xmark",
-                               label: "隐藏检查器",
-                               tint: .secondary,
-                               action: onClose)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
     }
 
     private func singleSelection(_ result: SearchResult) -> some View {

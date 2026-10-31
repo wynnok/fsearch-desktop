@@ -88,8 +88,7 @@ struct SearchView: View {
                     FileInspectorView(result: model.selectedResult,
                                       state: inspector,
                                       path: singleSelectedPath,
-                                      actions: actions,
-                                      onClose: selectionState.toggleInspector)
+                                      actions: actions)
                         .frame(minWidth: 252, idealWidth: 292, maxWidth: 336)
                 }
             }
@@ -281,6 +280,10 @@ struct SearchView: View {
                     selectionState: selectionState,
                     sort: model.sort,
                     onSort: model.sortBy,
+                    onScrollToEnd: {
+                        guard model.nextCursor != nil, !model.busy else { return }
+                        model.loadMore()
+                    },
                     actions: actions
                 )
                 .frame(minHeight: 250, maxHeight: .infinity)
@@ -414,26 +417,6 @@ struct SearchView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 SearchFileActionIconRow(path: singleSelectedPath, actions: actions, size: 24)
-
-                Rectangle()
-                    .fill(FDTheme.hairlineColor)
-                    .frame(width: 1, height: 16)
-
-                Button {
-                    model.loadMore()
-                } label: {
-                    Label("载入更多", systemImage: "arrow.down.circle")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .disabled(model.nextCursor == nil || model.busy)
-                .accessibilityIdentifier("load-more")
-                .buttonStyle(FDSecondaryButtonStyle())
-            }
-            if let pagination = model.paginationMessage {
-                Text(pagination)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, footerTextLeadingInset)
             }
             if let message = actions.message {
                 Text(message)
@@ -445,7 +428,7 @@ struct SearchView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .frame(minHeight: 62, alignment: .top)
+        .frame(minHeight: 44, alignment: .center)
         .background(FDHeaderBackground())
     }
 
@@ -709,6 +692,7 @@ private struct ResultsTableView: NSViewRepresentable {
     @ObservedObject var selectionState: SearchSelectionState
     let sort: NameSort
     let onSort: (SearchSortColumn) -> Void
+    let onScrollToEnd: () -> Void
     let actions: FileActionState
 
     func makeCoordinator() -> Coordinator {
@@ -783,6 +767,11 @@ private struct ResultsTableView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = FDTheme.surfaceNSColor
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(context.coordinator,
+                                               selector: #selector(Coordinator.scrollPositionChanged),
+                                               name: NSView.boundsDidChangeNotification,
+                                               object: scrollView.contentView)
         return scrollView
     }
 
@@ -821,6 +810,11 @@ private struct ResultsTableView: NSViewRepresentable {
         coordinator.renderedPrimary = selectionState.selectedPath
         coordinator.renderedResults = results
         coordinator.isUpdatingSelection = false
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator, name: NSView.boundsDidChangeNotification,
+                                                  object: scrollView.contentView)
     }
 
     private var sortDescriptors: [NSSortDescriptor] {
@@ -869,12 +863,26 @@ private struct ResultsTableView: NSViewRepresentable {
         var parent: ResultsTableView
         weak var table: NSTableView?
         var isUpdatingSelection = false
+        var isLoadMoreScheduled = false
         var renderedSelection: Set<String> = []
         var renderedPrimary: String?
         var renderedResults: [SearchResult]?
 
         init(parent: ResultsTableView) {
             self.parent = parent
+        }
+
+        @objc func scrollPositionChanged(_ notification: Notification) {
+            guard !isUpdatingSelection, !isLoadMoreScheduled else { return }
+            isLoadMoreScheduled = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.isLoadMoreScheduled = false }
+                guard let table = self.table, table.numberOfRows > 0,
+                      let clipView = table.enclosingScrollView?.contentView,
+                      clipView.bounds.maxY >= table.rect(ofRow: table.numberOfRows - 1).maxY else { return }
+                self.parent.onScrollToEnd()
+            }
         }
 
         private struct OpenWithTarget {

@@ -144,12 +144,53 @@ final class SearchWindowLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(table.bounds.width, results.contentSize.width + 1,
                                      "The table viewport should fit at \(size)")
             let resultFrame = results.convert(results.bounds, to: nil)
-            XCTAssertGreaterThanOrEqual(resultFrame.minY - visible.minY, 60,
-                                        "Path navigation and pagination need visible space at \(size)")
+            XCTAssertGreaterThanOrEqual(resultFrame.minY - visible.minY, 44,
+                                        "Path navigation and file actions need visible space at \(size)")
             let pathFrame = path.convert(path.bounds, to: nil)
             XCTAssertLessThanOrEqual(pathFrame.minY - visible.minY, 56,
                                      "A separate file-action row should not extend the footer at \(size)")
         }
+    }
+
+    func testScrollingToEndLoadsNextPageWithoutChangingSelection() async throws {
+        _ = NSApplication.shared
+        let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/scroll-tests/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for index in 0..<8 {
+            try Data().write(to: directory.appendingPathComponent("result-\(index).txt"))
+        }
+        let model = SearchModel(arguments: ["FsearchSample", directory.path, "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        model.query = "."
+        await model.search()
+        try await Task.sleep(for: .milliseconds(200))
+        let table = try XCTUnwrap(firstView(of: NSTableView.self, in: host))
+        let scrollView = try XCTUnwrap(table.enclosingScrollView)
+        let first = try XCTUnwrap(model.results.first)
+        model.selectionState.select(paths: [first.path], primary: first.path)
+        try await Task.sleep(for: .milliseconds(100))
+        let initialCount = model.results.count
+        XCTAssertNotNil(model.nextCursor)
+        table.scrollRowToVisible(table.numberOfRows - 1)
+        for _ in 0..<10 {
+            NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+        }
+        for _ in 0..<100 where model.results.count == initialCount {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.results.count, initialCount + 2)
+        XCTAssertEqual(model.selectionState.selectedPaths, [first.path])
+        XCTAssertEqual(model.selectionState.selectedPath, first.path)
+        XCTAssertNotNil(model.nextCursor)
     }
 
     func testContentSearchQueryAndFooterFitWithinSheet() async throws {
