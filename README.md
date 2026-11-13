@@ -4,13 +4,13 @@
 
 基于 [Fsearch](https://github.com/noahdunnagan/fsearch) 索引引擎，使用 SwiftUI 与 AppKit 构建原生 macOS 界面。从搜索、筛选到查看属性、Quick Look 预览和文件操作，在同一应用中完成。
 
-[下载安装](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.1-unsigned) · [功能介绍](#功能介绍) · [快捷键](#快捷键) · [开发与构建](#开发与构建) · [使用指南](docs/product/user-guide.md)
+[下载安装](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.2-unsigned) · [功能介绍](#功能介绍) · [快捷键](#快捷键) · [开发与构建](#开发与构建) · [使用指南](docs/product/user-guide.md)
 
 ![FsearchDesktop 真机主窗口：限定 Sources 目录搜索文件名，选中结果后查看检查器与路径导航](docs/images/main-window.png)
 
-> **当前版本：v0.2.1-unsigned · 早期预发布版**
+> **当前版本：v0.2.2-unsigned · 早期预发布版**
 >
-> 提供 Apple Silicon、Intel 和 Universal DMG。当前包使用 ad-hoc 签名，尚无 Developer ID 签名或 Apple 公证，首次启动可能被 macOS 阻止。macOS 13+ 和两种芯片是支持目标，Intel 与 macOS 13 实机仍待验证。详见[发布说明](docs/releases/v0.2.1-unsigned.md)和[支持状态](docs/product/support-status.md)。
+> 提供 Apple Silicon、Intel 和 Universal DMG。当前包使用 ad-hoc 签名，尚无 Developer ID 签名或 Apple 公证，首次启动可能被 macOS 阻止。macOS 13+ 和两种芯片是支持目标，Intel 与 macOS 13 实机仍待验证。详见[发布说明](docs/releases/v0.2.2-unsigned.md)和[支持状态](docs/product/support-status.md)。
 
 ## 一眼了解
 
@@ -28,7 +28,7 @@
 
 ### 1. 下载与安装
 
-从 [v0.2.1-unsigned Release](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.1-unsigned) 下载 DMG，并可使用同页的 `SHA256SUMS` 校验文件。
+从 [v0.2.2-unsigned Release](https://github.com/wynnok/fsearch-desktop/releases/tag/v0.2.2-unsigned) 下载 DMG，并可使用同页的 `SHA256SUMS` 校验文件。
 
 | 你的 Mac | 下载选择 |
 | --- | --- |
@@ -191,7 +191,7 @@ bash scripts/dev.sh run
 
 | 面向 | 文档 |
 | --- | --- |
-| 用户 | [使用指南](docs/product/user-guide.md) · [支持状态](docs/product/support-status.md) · [本版发布说明](docs/releases/v0.2.1-unsigned.md) |
+| 用户 | [使用指南](docs/product/user-guide.md) · [支持状态](docs/product/support-status.md) · [本版发布说明](docs/releases/v0.2.2-unsigned.md) |
 | 产品 | [产品需求](docs/product/requirements.md) · [交互方案](docs/product/interaction.md) |
 | 开发 | [架构方案](docs/engineering/architecture.md) · [验证计划](docs/engineering/validation-plan.md) · [发布方案](docs/engineering/release.md) |
 | 设计与实施 | [规格索引](docs/specs/README.md) · [执行切片](docs/tickets/README.md) · [架构决策](docs/adr/) · [领域术语](GLOSSARY.md) |
