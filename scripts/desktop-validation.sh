@@ -8,8 +8,10 @@ APP="${1:?Usage: desktop-validation.sh <FsearchDesktop.app>}"
 [[ "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Contents/Info.plist")" == FsearchDesktop ]]
 [[ "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" == dev.fsearch.desktop ]]
 OUTPUT="$PROJECT_ROOT/.build/desktop-evidence"
-mkdir -p "$OUTPUT"
-WORKSPACE="$(mktemp -d "$OUTPUT/run.XXXXXX")"
+mkdir -p "$OUTPUT" "$PROJECT_ROOT/.scratch/desktop-validation"
+# Not under .build: SwiftPM puts a CACHEDIR.TAG there, and Fsearch 0.2.2 applies
+# changes in cache-tagged folders lazily; the journey asserts live changes.
+WORKSPACE="$(mktemp -d "$PROJECT_ROOT/.scratch/desktop-validation/run.XXXXXX")"
 cleanup() { dev_dmg_stop_smoke; rm -rf "$WORKSPACE"; }
 trap cleanup EXIT
 trap 'exit 130' INT

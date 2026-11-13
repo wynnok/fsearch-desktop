@@ -2,8 +2,10 @@
 set -euo pipefail
 source "$(dirname "$0")/build-environment.sh"
 source "$PROJECT_ROOT/scripts/dev-dmg-common.sh"
-mkdir -p "$PROJECT_ROOT/.build/content-evidence"
-WORKSPACE="$(mktemp -d "$PROJECT_ROOT/.build/content-evidence/run.XXXXXX")"
+mkdir -p "$PROJECT_ROOT/.build/content-evidence" "$PROJECT_ROOT/.scratch/content-validation"
+# Not under .build: SwiftPM puts a CACHEDIR.TAG there, and Fsearch 0.2.2 applies
+# changes in cache-tagged folders lazily; the update check needs a user-like folder.
+WORKSPACE="$(mktemp -d "$PROJECT_ROOT/.scratch/content-validation/run.XXXXXX")"
 cleanup() { dev_dmg_stop_smoke; rm -rf "$WORKSPACE"; }
 trap cleanup EXIT
 trap 'exit 130' INT

@@ -6,9 +6,13 @@ build_rust
 invalidate_swift_link .build/swift-linked-rust
 swift build "${SWIFT_OPTIONS[@]}"
 BIN_PATH="$(swift build "${SWIFT_OPTIONS[@]}" --show-bin-path)"
-mkdir -p "$PROJECT_ROOT/.build/engine-validation" "$PROJECT_ROOT/.build/engine-evidence"
-WORKSPACE="$(mktemp -d "$PROJECT_ROOT/.build/engine-validation/run-XXXXXX")"
 OUTPUT="$PROJECT_ROOT/.build/engine-evidence"
+mkdir -p "$OUTPUT"
+# Not under .build: SwiftPM puts a CACHEDIR.TAG there, and Fsearch 0.2.2 applies
+# changes in cache-tagged folders lazily. This validation asserts prompt live
+# updates in a user-like folder.
+mkdir -p "$PROJECT_ROOT/.scratch/engine-validation"
+WORKSPACE="$(mktemp -d "$PROJECT_ROOT/.scratch/engine-validation/run-XXXXXX")"
 OWNER_PID=""
 NATIVE_PID=""
 cleanup() {

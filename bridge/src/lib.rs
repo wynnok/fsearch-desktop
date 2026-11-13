@@ -15,7 +15,7 @@ mod engine;
 
 static ACTIVE_BRIDGE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static PANIC_HOOK: Once = Once::new();
-const UPSTREAM_VERSION: &str = "0.2.1 / 88e63fdf850cf7749deae8198b187accd21f8ba5";
+const UPSTREAM_VERSION: &str = "0.2.2 / 4bc11cef48db33c45cff6578037cadb3a22bdd91";
 
 struct ActiveCall;
 

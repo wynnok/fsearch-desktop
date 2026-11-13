@@ -2,6 +2,8 @@
 
 研究日期：2026-10-13。基线：`noahdunnagan/fsearch` **v0.2.1**，固定提交 `88e63fdf850cf7749deae8198b187accd21f8ba5`。本报告以该提交的实际代码为准，链接均固定到该提交；后续升级必须重新核查接口和边界。
 
+2026-11-13 升级复核：依赖已更新到 **v0.2.2**（commit `4bc11cef48db33c45cff6578037cadb3a22bdd91`）。公开库接口和索引格式经 `88e63fdf850cf7749deae8198b187accd21f8ba5..4bc11cef48db33c45cff6578037cadb3a22bdd91` 静态 diff 复核未变；live 更新的 churn 目录延迟、丢事件退避等行为变化见 [T24](../implementation/T24.md)。
+
 ## 结论
 
 Fsearch 能提供本应用需要的核心能力：macOS 文件名索引、模糊与字面查询、路径和元数据过滤、FSEvents 增量更新，以及有限范围的文本内容检索。它同时提供 Rust crate、CLI、JSON Lines 守护进程接口和 MCP，但没有 Swift/C ABI。SwiftUI + AppKit 客户端需要一个薄桥接层，搜索与索引算法继续调用上游。公开库与二进制模块的边界见 [lib.rs L1–17](https://github.com/noahdunnagan/fsearch/blob/88e63fdf850cf7749deae8198b187accd21f8ba5/src/lib.rs#L1-L17)、[main.rs L1–25](https://github.com/noahdunnagan/fsearch/blob/88e63fdf850cf7749deae8198b187accd21f8ba5/src/main.rs#L1-L25)。
