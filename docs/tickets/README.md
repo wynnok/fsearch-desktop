@@ -3,8 +3,9 @@
 33 张纵向切片已由用户确认并发布，覆盖现有 13 个子 Spec，包含 141 项验收条件和 55 条原生阻塞边。
 
 - 所有 Ticket 均标记 `ready-for-agent`，归属对应 Spec 的原生子 Issue。
-- [T01 / #15](https://github.com/wynnok/fsearch-desktop/issues/15) 是当前唯一无阻塞执行票；工作从其开始，随后只领取阻塞项都已完成的票。
-- 执行状态以 GitHub 为准，本地保存正文副本；父 Spec 的标题、正文、标签和状态没有被本次拆分编辑或关闭。
+- 拆分时 [T01 / #15](https://github.com/wynnok/fsearch-desktop/issues/15) 是唯一无阻塞执行票；此后按阻塞关系逐票推进，执行顺序记录在下文各次复核中。
+- 执行状态以 GitHub 为准，本地保存正文副本；父 Spec 的标题、正文、标签和状态没有被拆分过程编辑或关闭。
+- 最新状态：[2026-11-13 收尾复核](#2026-11-13-收尾复核)——33 张 Ticket 中 26 张已关闭，7 张因外部设备/权限/签名门禁保留 OPEN。
 - Spec 的整体依赖保留，Ticket 的前置只指向真正需要的能力，不把自身父 Spec 关闭设为前置。跨 Spec 验收关系写在各票 Parent 中，不能仅凭直接子票计数断言 Spec 全部满足。
 - 本文件是拆分时的规划记录。实现进展与逐票证据见 [实施报告](../implementation/)；执行状态以 GitHub 为准，外部门禁未解除的票保持 OPEN。
 
@@ -126,3 +127,66 @@ GitHub 逐票核对：7 CLOSED、26 OPEN；本地实现不等于所有验收完�
 
 规范复核：发现的实现问题已修复，最终无未修复项。规格复核：发现的 T24 重试错误已修复，剩余为上述用户明确延期的入口及外部验收条件。
 
+## 2026-11-13 收尾复核
+
+GitHub 逐票重新核对：起点 40 OPEN / 7 CLOSED。按本文件的票据与逐票实施报告、当前代码、完整测试、真实 GitHub Actions 运行和已发布资产交叉检查后，**关闭 26 项（19 张 Ticket + 7 个 Spec），保留 14 项 OPEN**。所有关闭均在对应 Issue 留下逐条验收证据评论；保留项记录了唯一剩余门禁。
+
+判定标准：验收条件（Ticket 的 Acceptance criteria、Spec 的 User Stories/Testing Decisions）逐条可被代码、回归或真实运行证据满足才关闭。外部条件缺失（Intel 实机、macOS 13 实机、Developer ID 签名、真实 TCC、干净账号安装）属于验收项本身时保持 OPEN，不以样本、编译切片、标签或 workflow 存在替代；由其他未关闭票承载的缺口在评论中显式指向该票。
+
+基线：客户端 0.2.2，引擎 0.2.2（`4bc11cef48db33c45cff6578037cadb3a22bdd91`），发布 `v0.2.2-unsigned`（`6a16e9e`）。本机 Apple Silicon arm64 / macOS 27.0.1。
+
+### 已关闭（26）
+
+| 项 | 证据 |
+| --- | --- |
+| T11 / [#25](https://github.com/wynnok/fsearch-desktop/issues/25) | 范围与隐藏项：`SearchConfigurationTests`、`SearchFilterTests`（不删条目、不混旧快照）、原生旅程；外接/网络卷说明在指南 |
+| T12 / [#26](https://github.com/wynnok/fsearch-desktop/issues/26) | `SearchFilterTests` 7 项：组合、边界、精度、分页；逐项与全部清除 |
+| T13 / [#27](https://github.com/wynnok/fsearch-desktop/issues/27) | `LiveRefreshTests` 4 项：连续变更、排序变化、续页、晚返回 |
+| T15 / [#29](https://github.com/wynnok/fsearch-desktop/issues/29) | `FileInspectorTests` 4 项：晚返回、删除、多选、目录不递归 |
+| T16 / [#30](https://github.com/wynnok/fsearch-desktop/issues/30) | `PathNavigationTests`、`FileOpenTests`、`MultiSelectionFileActionTests`、原生文件动作冒烟 |
+| T17 / [#31](https://github.com/wynnok/fsearch-desktop/issues/31) | Quick Look 冒烟与多选预览顺序回归；预览格式不宣称正文能力 |
+| T18 / [#32](https://github.com/wynnok/fsearch-desktop/issues/32) | `WindowLifecycleTests`、引擎验证脚本的关窗后台更新/重开/⌘Q |
+| T19 / [#33](https://github.com/wynnok/fsearch-desktop/issues/33) | `LocalPreferencesTests` 3 项；偏好与查询历史分离 |
+| T20 / [#34](https://github.com/wynnok/fsearch-desktop/issues/34) | `DiagnosticExportTests` 4 项：成品级脱敏与失败边界 |
+| T21 / [#35](https://github.com/wynnok/fsearch-desktop/issues/35) | `ManualUpdateTests` 3 项；入口指向真实可下载 Releases |
+| T22 / [#36](https://github.com/wynnok/fsearch-desktop/issues/36) | 真实 Actions：[43353631514](https://github.com/wynnok/fsearch-desktop/actions/runs/43353631514) 开发 DMG、[43353833688](https://github.com/wynnok/fsearch-desktop/actions/runs/43353833688) 预发布；CI 内安装与冒烟 |
+| T23 / [#37](https://github.com/wynnok/fsearch-desktop/issues/37) | 每日检测连续成功（如 [43390814099](https://github.com/wynnok/fsearch-desktop/actions/runs/43390814099)），受控 8 场景 |
+| T24 / [#38](https://github.com/wynnok/fsearch-desktop/issues/38) | 0.2.2 真实候选 `outcome: pr-ready`；锁刷新、pin、双架构、完整回归；补丁列表为空。残余：云端 `gh pr create` 尚未真实开单 |
+| T25 / [#39](https://github.com/wynnok/fsearch-desktop/issues/39) | 安装包 search-journey 5 项 + 公开服务回归 + 指南 |
+| T26 / [#40](https://github.com/wynnok/fsearch-desktop/issues/40) | file-journey 13 项、file-actions 12 项、指南数据边界 |
+| T30 / [#44](https://github.com/wynnok/fsearch-desktop/issues/44) | 公开 Grep 契约、真实引擎内容旅程、一文件一结果计数 |
+| T31 / [#45](https://github.com/wynnok/fsearch-desktop/issues/45) | `ContentSearchOptionsTests`、范围/筛选复用、智能大小写与非法正则 |
+| T32 / [#46](https://github.com/wynnok/fsearch-desktop/issues/46) | `ContentPaginationTests` 4 项：cursor 续查、停止态、UTF-8 范围、晚返回 |
+| T33 / [#47](https://github.com/wynnok/fsearch-desktop/issues/47) | 文本旅程、`ContentSearchLayoutTests` 3 项、指南第 53–59 行边界 |
+| SPEC-01 / [#2](https://github.com/wynnok/fsearch-desktop/issues/2) | T01/T02/T07 已关闭；查询、Unicode、错误与 panic、独立索引回归 |
+| SPEC-02 / [#3](https://github.com/wynnok/fsearch-desktop/issues/3) | T03/T04/T05 已关闭；`NameSnapshotTests`、`SizeTimeSnapshotTests`、响应性回归 |
+| SPEC-06 / [#7](https://github.com/wynnok/fsearch-desktop/issues/7) | T15/T16/T17 已关闭；检查器、路径、Quick Look、多选回归 |
+| SPEC-08 / [#9](https://github.com/wynnok/fsearch-desktop/issues/9) | T19/T20/T21 已关闭；偏好、成品脱敏、更新入口 |
+| SPEC-09 / [#10](https://github.com/wynnok/fsearch-desktop/issues/10) | T22 已关闭；真实 CI 双架构产物与安装冒烟；规格本身允许 Intel 实机未验证 |
+| SPEC-11 / [#11](https://github.com/wynnok/fsearch-desktop/issues/11) | T23/T24 已关闭；每日检测与升级候选链路真实运行 |
+| SPEC-13 / [#14](https://github.com/wynnok/fsearch-desktop/issues/14) | T30–T33 已关闭；内容搜索随 0.2.2 交付，边界明确 |
+
+### 保留 OPEN（14）与唯一剩余门禁
+
+| 项 | 剩余门禁 |
+| --- | --- |
+| SPEC-00 / [#1](https://github.com/wynnok/fsearch-desktop/issues/1) | 聚合项；#12、#13 阶段未通过 |
+| SPEC-04 / [#4](https://github.com/wynnok/fsearch-desktop/issues/4) | Intel 实机、macOS 13 实机运行 |
+| SPEC-03 / [#5](https://github.com/wynnok/fsearch-desktop/issues/5) | T08 的签名主体 + 真实 TCC |
+| SPEC-05 / [#6](https://github.com/wynnok/fsearch-desktop/issues/6) | T10 第 5 项要求 M1 门禁证据 |
+| SPEC-07 / [#8](https://github.com/wynnok/fsearch-desktop/issues/8) | T14 第 3 项依赖 M1 权限证据 |
+| SPEC-12 / [#12](https://github.com/wynnok/fsearch-desktop/issues/12) | T27 两芯片、真实权限、干净账号安装 |
+| SPEC-10 / [#13](https://github.com/wynnok/fsearch-desktop/issues/13) | Developer ID、公证、已批准 tag 的真实发布 |
+| T06 / [#20](https://github.com/wynnok/fsearch-desktop/issues/20) | Intel / macOS 13 实机运行 |
+| T08 / [#22](https://github.com/wynnok/fsearch-desktop/issues/22) | 签名应用的真实 TCC 授权与撤销 |
+| T10 / [#24](https://github.com/wynnok/fsearch-desktop/issues/24) | 同 SPEC-05：M1 外部门禁 |
+| T14 / [#28](https://github.com/wynnok/fsearch-desktop/issues/28) | 依赖 #22 的权限证据 |
+| T27 / [#41](https://github.com/wynnok/fsearch-desktop/issues/41) | 两芯片实机、TCC、干净安装、下载后安装证据 |
+| T28 / [#42](https://github.com/wynnok/fsearch-desktop/issues/42) | 真实签名、Accepted、staple 与干净环境启动 |
+| T29 / [#43](https://github.com/wynnok/fsearch-desktop/issues/43) | 一次已批准 tag 的签名发布与可下载资产 |
+
+### 本轮验证
+
+`bash scripts/dev.sh check`（Rust check + Swift 构建）通过；`bash scripts/dev.sh test`：`FsearchAppTests` 58/58、`FsearchServiceTests` 58/59 通过。唯一失败是 `ContentSearchTests.testRealEngineLiteralContentJourneyInIndependentProcess`——它在独立进程内调用 macOS `sandbox_init`，在外层执行沙箱中被拒绝（`Operation not permitted`），属执行环境限制，同一用例在 CI 的 macos-26 runner 通过。
+
+未做：真实 TCC、Intel / macOS 13 实机、干净账号安装、签名公证与正式发行。上述缺口保持未验证，不计入关闭依据。
