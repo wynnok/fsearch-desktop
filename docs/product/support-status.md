@@ -27,4 +27,6 @@
 
 2026-10-14 用户确认先评审本机样本界面并提供未签名预发布包，个人磁盘入口另行推进；Intel、macOS 13 和干净账号首次安装继续保留未验证。当前无需开发者账号即可使用本地 ad-hoc 签名运行样本应用；Developer ID 签名、公证和正式发行延后，不解除 T08/T28/T29 门禁。逐票状态见 [Tickets 复核](../tickets/README.md#2026-11-13-收尾复核)（前次记录见 [2026-10-14 全票复核](../tickets/README.md#2026-10-14-全票复核)）。
 
+2026-11-13 维护者决定：Intel/macOS 13 实机、真实 TCC、Developer ID 签名与公证凭据无法在当前条件下取得，对应 13 项 Issue 按[暂缓结案](../tickets/README.md#2026-11-13-暂缓结案deferred--wontfix)（标签 `wontfix`，可随时重开），不再以 OPEN 状态跟踪。已完成的实现、报告与 CI 证据保留；本节的支持矩阵与未验证说明不变，暂缓不等于门禁通过，也不改变 `v0.2.2-unsigned` 为未签名预发布的定性。
+
 T27 的完整两芯片 alpha 验收仍未通过。按用户后续明确指示，[T29](../implementation/T29.md) 已建立受门禁约束的正式发布代码，[T30](../implementation/T30.md)/[T31](../implementation/T31.md)/[T32](../implementation/T32.md)/[T33](../implementation/T33.md) 已接入并验收受控真实 Engine 的内容查询、选项、续查与高亮；已有未签名预发布版，尚无正式签名发行，当前源码包已启用个人磁盘正文入口，但真实 TCC 授权前后与不同系统的完整验收仍需设备证据。本状态不解除前置验收条件。

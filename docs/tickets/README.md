@@ -5,7 +5,7 @@
 - 所有 Ticket 均标记 `ready-for-agent`，归属对应 Spec 的原生子 Issue。
 - 拆分时 [T01 / #15](https://github.com/wynnok/fsearch-desktop/issues/15) 是唯一无阻塞执行票；此后按阻塞关系逐票推进，执行顺序记录在下文各次复核中。
 - 执行状态以 GitHub 为准，本地保存正文副本；父 Spec 的标题、正文、标签和状态没有被拆分过程编辑或关闭。
-- 最新状态：[2026-11-13 收尾复核](#2026-11-13-收尾复核)——33 张 Ticket 中 26 张已关闭，7 张因外部设备/权限/签名门禁保留 OPEN。
+- 最新状态：[2026-11-13 收尾复核](#2026-11-13-收尾复核)——33 张 Ticket 全部结案（26 张验收关闭、7 张按暂缓结案），13 个子 Spec 中 7 个验收关闭、6 个随对应外部门禁暂缓，仅总规格 [#1](https://github.com/wynnok/fsearch-desktop/issues/1) 保留 OPEN 作为阶段汇总。
 - Spec 的整体依赖保留，Ticket 的前置只指向真正需要的能力，不把自身父 Spec 关闭设为前置。跨 Spec 验收关系写在各票 Parent 中，不能仅凭直接子票计数断言 Spec 全部满足。
 - 本文件是拆分时的规划记录。实现进展与逐票证据见 [实施报告](../implementation/)；执行状态以 GitHub 为准，外部门禁未解除的票保持 OPEN。
 
@@ -129,9 +129,9 @@ GitHub 逐票核对：7 CLOSED、26 OPEN；本地实现不等于所有验收完�
 
 ## 2026-11-13 收尾复核
 
-GitHub 逐票重新核对：起点 40 OPEN / 7 CLOSED。按本文件的票据与逐票实施报告、当前代码、完整测试、真实 GitHub Actions 运行和已发布资产交叉检查后，**关闭 26 项（19 张 Ticket + 7 个 Spec），保留 14 项 OPEN**。所有关闭均在对应 Issue 留下逐条验收证据评论；保留项记录了唯一剩余门禁。
+GitHub 逐票重新核对：起点 40 OPEN / 7 CLOSED。按本文件的票据与逐票实施报告、当前代码、完整测试、真实 GitHub Actions 运行和已发布资产交叉检查后，**先关闭 26 项（19 张 Ticket + 7 个 Spec）**，其余 14 项保留 OPEN 并记录唯一剩余门禁。同日维护者决定把其中 13 项按[暂缓结案](#2026-11-13-暂缓结案deferred--wontfix)，最终仅总规格 #1 保留 OPEN。所有变更均在对应 Issue 留下证据与理由评论。
 
-判定标准：验收条件（Ticket 的 Acceptance criteria、Spec 的 User Stories/Testing Decisions）逐条可被代码、回归或真实运行证据满足才关闭。外部条件缺失（Intel 实机、macOS 13 实机、Developer ID 签名、真实 TCC、干净账号安装）属于验收项本身时保持 OPEN，不以样本、编译切片、标签或 workflow 存在替代；由其他未关闭票承载的缺口在评论中显式指向该票。
+判定标准：验收条件（Ticket 的 Acceptance criteria、Spec 的 User Stories/Testing Decisions）逐条可被代码、回归或真实运行证据满足才关闭。外部条件缺失（Intel 实机、macOS 13 实机、Developer ID 签名、真实 TCC、干净账号安装）属于验收项本身时不得关闭（先保持 OPEN，同日按下方规则暂缓结案），不以样本、编译切片、标签或 workflow 存在替代；由其他未关闭票承载的缺口在评论中显式指向该票。
 
 基线：客户端 0.2.2，引擎 0.2.2（`4bc11cef48db33c45cff6578037cadb3a22bdd91`），发布 `v0.2.2-unsigned`（`6a16e9e`）。本机 Apple Silicon arm64 / macOS 27.0.1。
 
@@ -190,3 +190,27 @@ GitHub 逐票重新核对：起点 40 OPEN / 7 CLOSED。按本文件的票据与
 `bash scripts/dev.sh check`（Rust check + Swift 构建）通过；`bash scripts/dev.sh test`：`FsearchAppTests` 58/58、`FsearchServiceTests` 58/59 通过。唯一失败是 `ContentSearchTests.testRealEngineLiteralContentJourneyInIndependentProcess`——它在独立进程内调用 macOS `sandbox_init`，在外层执行沙箱中被拒绝（`Operation not permitted`），属执行环境限制，同一用例在 CI 的 macos-26 runner 通过。
 
 未做：真实 TCC、Intel / macOS 13 实机、干净账号安装、签名公证与正式发行。上述缺口保持未验证，不计入关闭依据。
+
+### 2026-11-13 暂缓结案（deferred / wontfix）
+
+维护者决定：外部条件（Intel 实机、macOS 13 实机、Developer ID 签名与公证凭据、可自由变更的 TCC 专用环境、干净账号）在当前项目条件下不具备，相关项不再以 OPEN 状态长期跟踪，按**暂缓**结案。标签由 `ready-for-agent` 改为 `wontfix`，关闭原因 `not planned`；代码、报告与 CI 证据全部保留，条件具备时可随时重开。
+
+| 项 | 已完成的证据 | 恢复条件 |
+| --- | --- | --- |
+| T06 / [#20](https://github.com/wynnok/fsearch-desktop/issues/20) | 两架构构建/链接、切片与最低 OS 核对、CI 产出三种 DMG | 取得 Intel 或 macOS 13 实机后补运行列 |
+| T08 / [#22](https://github.com/wynnok/fsearch-desktop/issues/22) | 权限探针四阶段评估与 `unverified` 失败门禁 | 具备签名身份与专用 TCC 环境 |
+| T10 / [#24](https://github.com/wynnok/fsearch-desktop/issues/24) | 主窗口、五模式、冒烟、快捷键与基础 VoiceOver 标签 | #20 / #22 重开；仅剩人工 VoiceOver 记录 |
+| T14 / [#28](https://github.com/wynnok/fsearch-desktop/issues/28) | 引导跳过、分状态显示与状态分离回归 | 依赖 #22 的权限证据 |
+| T27 / [#41](https://github.com/wynnok/fsearch-desktop/issues/41) | 开发包、本机旅程、指南、支持矩阵与已知限制 | 两芯片实机、真实权限、干净安装 |
+| T28 / [#42](https://github.com/wynnok/fsearch-desktop/issues/42) | 签名/公证链路与 7 个失败停止场景 | 配置 Developer ID 与 notarytool |
+| T29 / [#43](https://github.com/wynnok/fsearch-desktop/issues/43) | tag 发布门禁与预检失败路径；未签名预发布独立 workflow | 凭据与 T27/T28 证据 |
+| SPEC-04 / [#4](https://github.com/wynnok/fsearch-desktop/issues/4) | 两架构构建/链接与 CI 产物 | 随 #20 重开补齐运行证据 |
+| SPEC-03 / [#5](https://github.com/wynnok/fsearch-desktop/issues/5) | 生命周期、独立索引、通知与资源报告（T07/T09） | 随 #22 重开补齐权限证据 |
+| SPEC-05 / [#6](https://github.com/wynnok/fsearch-desktop/issues/6) | 三区域窗口、排序分页、异步与刷新、键盘与 VoiceOver 冒烟 | 随 #24 收尾 |
+| SPEC-07 / [#8](https://github.com/wynnok/fsearch-desktop/issues/8) | 引导、索引状态、窗口生命周期 | 随 #28 补齐 |
+| SPEC-12 / [#12](https://github.com/wynnok/fsearch-desktop/issues/12) | 用户指南、支持矩阵、已知限制与原生旅程 | 随 #41 重开复核 |
+| SPEC-10 / [#13](https://github.com/wynnok/fsearch-desktop/issues/13) | 签名/公证/发布门禁代码与失败停止路径 | 随 #42 / #43 重开 |
+
+保留 OPEN：[SPEC-00 / #1](https://github.com/wynnok/fsearch-desktop/issues/1) 作为产品阶段汇总（M1 双架构/权限与公众发行门禁均为暂缓状态）。
+
+对外口径不变：`v0.2.2-unsigned` 仍是**未签名、未公证**的 Pre-release；暂缓结案不等于门禁通过，[支持状态](../product/support-status.md)与用户指南中的未验证说明继续有效。
