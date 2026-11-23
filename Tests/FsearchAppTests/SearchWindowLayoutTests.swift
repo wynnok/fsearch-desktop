@@ -152,6 +152,48 @@ final class SearchWindowLayoutTests: XCTestCase {
         }
     }
 
+    func testSearchResultHeaderTitlesAreVerticallyCentered() async throws {
+        _ = NSApplication.shared
+        let model = SearchModel(arguments: ["FsearchSample", "fixtures/sample", "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        model.query = "report"
+        model.sort = .modifiedDescending
+        await model.search()
+        try await Task.sleep(for: .milliseconds(200))
+        host.layoutSubtreeIfNeeded()
+
+        let table = try XCTUnwrap(firstView(of: NSTableView.self, in: host))
+        let header = try XCTUnwrap(table.headerView)
+        let bitmap = try XCTUnwrap(header.bitmapImageRepForCachingDisplay(in: header.bounds))
+        header.cacheDisplay(in: header.bounds, to: bitmap)
+        let scaleX = CGFloat(bitmap.pixelsWide) / header.bounds.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / header.bounds.height
+
+        for (index, column) in table.tableColumns.enumerated() {
+            let columnRect = header.headerRect(ofColumn: index).offsetBy(dx: -header.bounds.minX, dy: 0)
+            // Sample the title side of each column, clear of the sort indicator and column edges.
+            let left = Int((columnRect.minX + 2) * scaleX)
+            let right = Int((columnRect.minX + 60) * scaleX)
+            let textRows = (1..<(bitmap.pixelsHigh - 1)).filter { y in
+                (left..<right).contains { x in
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceGray) else { return false }
+                    return color.whiteComponent < 0.65
+                }
+            }
+            let top = try XCTUnwrap(textRows.first, "Missing title for \(column.identifier.rawValue)")
+            let bottom = try XCTUnwrap(textRows.last)
+            let titleMidY = CGFloat(top + bottom + 1) / (2 * scaleY)
+            XCTAssertEqual(titleMidY, header.bounds.height / 2, accuracy: 1.5, column.identifier.rawValue)
+        }
+    }
+
     func testScrollingToEndLoadsNextPageWithoutChangingSelection() async throws {
         _ = NSApplication.shared
         let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

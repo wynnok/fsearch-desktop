@@ -614,7 +614,10 @@ final class FDTableHeaderCell: NSTableHeaderCell {
         cellFrame.fill()
         FDTheme.hairlineNSColor.setFill()
         NSRect(x: cellFrame.minX, y: cellFrame.maxY - 0.5, width: cellFrame.width, height: 0.5).fill()
-        drawInterior(withFrame: cellFrame, in: controlView)
+
+        let titleHeight = ceil(attributedStringValue.size().height)
+        let verticalInset = max(0, (cellFrame.height - titleHeight) / 2)
+        drawInterior(withFrame: cellFrame.insetBy(dx: 0, dy: verticalInset), in: controlView)
     }
 }
 
