@@ -158,21 +158,23 @@ struct FDIconTile: View {
 struct FDBrandMark: View {
     var size: CGFloat = 28
 
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
-                .fill(FDTheme.primary)
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Circle()
-                .fill(Color(red: 0.98, green: 0.72, blue: 0.30))
-                .frame(width: size * 0.18, height: size * 0.18)
-                .padding(size * 0.12)
+    private static let appIcon: NSImage = {
+        #if DEBUG
+        // The SwiftPM development runner starts in the project root without an app bundle.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil,
+           let icon = NSImage(contentsOfFile: "Resources/AppIcon.icns") {
+            return icon
         }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        #endif
+        return NSApplication.shared.applicationIconImage
+    }()
+
+    var body: some View {
+        Image(nsImage: Self.appIcon)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
