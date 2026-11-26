@@ -57,6 +57,52 @@ final class ContentPaginationTests: XCTestCase {
     }
 
     @MainActor
+    func testDeletionRestartsAnInFlightContinuationAndFiltersStaleMatches() async {
+        let deleted = "/tmp/\(UUID().uuidString)/deleted.txt"
+        let old = "/tmp/old-match.txt"
+        var late: CheckedContinuation<ContentSearchResponse, Never>?
+        var cursors: [Int?] = []
+        let controller = ContentSearchController { request in
+            cursors.append(request.cursor)
+            if request.cursor == 7 {
+                return await withCheckedContinuation { late = $0 }
+            }
+            if cursors.count == 1 { return Self.response(paths: [deleted, old], next: 7, complete: false) }
+            if request.cursor == nil { return Self.response(paths: [deleted], next: 4, complete: false) }
+            return Self.response(path: "/tmp/survivor.txt", next: nil, complete: true)
+        }
+
+        await controller.search(ContentSearchRequest(pattern: "match"))
+        let pending = Task { await controller.loadMore() }
+        while late == nil { await Task.yield() }
+        controller.removeResults(at: deleted)
+        XCTAssertEqual(controller.files.map(\.path), [old])
+        XCTAssertTrue(controller.canLoadMore)
+        XCTAssertEqual(controller.displayedOccurrences, 1)
+        late?.resume(returning: Self.response(path: deleted, next: nil, complete: true))
+        await pending.value
+        XCTAssertEqual(controller.files.map(\.path), [old])
+        await controller.loadMore()
+        XCTAssertEqual(cursors, [nil, 7, nil, 4])
+        XCTAssertEqual(controller.files.map(\.path), ["/tmp/survivor.txt"])
+    }
+
+    @MainActor
+    func testDeletionOutsideContentScopeKeepsContinuation() async {
+        var cursors: [Int?] = []
+        let controller = ContentSearchController { request in
+            cursors.append(request.cursor)
+            if request.cursor == nil { return Self.response(path: "/scope/a.txt", next: 7, complete: false) }
+            return Self.response(path: "/scope/b.txt", next: nil, complete: true)
+        }
+        await controller.search(ContentSearchRequest(pattern: "match", scopePath: "/scope"))
+        controller.removeResults(at: "/scope-other/a.txt")
+        await controller.loadMore()
+        XCTAssertEqual(cursors, [nil, 7])
+        XCTAssertEqual(controller.files.map(\.path), ["/scope/a.txt", "/scope/b.txt"])
+    }
+
+    @MainActor
     func testIncompleteWithoutCursorIsReportedAsStopped() async {
         let controller = ContentSearchController { _ in
             Self.response(path: "/tmp/a.txt", next: nil, complete: false)
@@ -69,11 +115,15 @@ final class ContentPaginationTests: XCTestCase {
     }
 
     private static func response(path: String, next: Int?, complete: Bool) -> ContentSearchResponse {
+        response(paths: [path], next: next, complete: complete)
+    }
+
+    private static func response(paths: [String], next: Int?, complete: Bool) -> ContentSearchResponse {
         ContentSearchResponse(
             requestID: UUID().uuidString,
-            files: [ContentFile(path: path, lines: [ContentLine(line: 1, text: "match", ranges: [[0, 5]])])],
-            candidates: 1,
-            read: 1,
+            files: paths.map { ContentFile(path: $0, lines: [ContentLine(line: 1, text: "match", ranges: [[0, 5]])]) },
+            candidates: paths.count,
+            read: paths.count,
             complete: complete,
             next: next,
             indexed: true,

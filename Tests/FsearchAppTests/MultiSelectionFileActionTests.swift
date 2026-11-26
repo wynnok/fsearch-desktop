@@ -93,9 +93,6 @@ final class MultiSelectionFileActionTests: XCTestCase {
         })
         actions.onFileMutation = model.fileDidChange
         await actions.permanentlyDelete(paths: [child.path, folder.path], in: nil)
-        for _ in 0..<100 where !model.results.isEmpty {
-            try await Task.sleep(for: .milliseconds(20))
-        }
         XCTAssertTrue(model.results.isEmpty)
         XCTAssertTrue(model.selectionState.selectedPaths.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))

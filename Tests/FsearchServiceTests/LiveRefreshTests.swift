@@ -4,6 +4,41 @@ import XCTest
 
 final class LiveRefreshTests: XCTestCase {
     @MainActor
+    func testDeletedFolderStaysOutOfStaleSnapshotsAndRecreatedPathsCanReturn() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/live-refresh/\(UUID().uuidString)")
+        let folder = root.appendingPathComponent("report")
+        let child = folder.appendingPathComponent("report-child.txt")
+        let sibling = root.appendingPathComponent("report-other.txt")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: child)
+        try Data().write(to: sibling)
+        let service = try FsearchService(sampleDirectory: root)
+        let controller = SnapshotQueryController(service: service)
+        let request = SearchRequest(query: "report")
+        await controller.query(request, pageSize: 1)
+        XCTAssertEqual(controller.totalCount, 3)
+        try FileManager.default.removeItem(at: folder)
+        controller.removeResults(at: folder.path + "/")
+        XCTAssertEqual(controller.results.map(\.path), [sibling.path])
+        XCTAssertEqual(controller.totalCount, 1)
+        XCTAssertNil(controller.nextCursor)
+
+        await controller.refreshCurrentQuery()
+        await controller.query(request, pageSize: 1)
+        XCTAssertEqual(controller.results.map(\.path), [sibling.path])
+        XCTAssertEqual(controller.totalCount, 1)
+
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        await controller.refreshCurrentQuery()
+        XCTAssertEqual(controller.totalCount, 2)
+        XCTAssertTrue(try controller.ensureVisible(path: folder.path))
+        XCTAssertFalse(try controller.ensureVisible(path: child.path))
+    }
+
+    @MainActor
     func testRefreshUsesCurrentQuerySortAndRetainsLoadedWindow() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

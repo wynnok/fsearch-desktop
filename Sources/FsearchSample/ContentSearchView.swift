@@ -85,6 +85,9 @@ struct ContentSearchView: View {
             selection = state.files.first?.path
             actions.updatePreview(path: nil)
         }
+        .onChange(of: state.files.map(\.path)) { paths in
+            if let selection, !paths.contains(selection) { self.selection = paths.first }
+        }
         .onDisappear { actions.updatePreview(path: nil) }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import FsearchService
 import XCTest
 @testable import FsearchSample
 
@@ -50,6 +51,35 @@ final class FileMutationTests: XCTestCase {
         await actions.permanentlyDelete(path: original.path, in: nil)
         XCTAssertFalse(FileManager.default.fileExists(atPath: original.path))
         XCTAssertEqual(try String(contentsOf: other, encoding: .utf8), "keep me")
+    }
+
+    func testConfirmedDeletionImmediatelyUpdatesBothSearchListsAndTheirSelection() async throws {
+        let directory = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = ["report1.txt", "report2.txt", "report3.txt"].map { directory.appendingPathComponent($0) }
+        for file in files { try Data("match".utf8).write(to: file) }
+        let model = SearchModel(arguments: ["FsearchSample", directory.path, "--smoke"])
+        let content = ContentSearchState(controller: ContentSearchController { request in
+            ContentSearchResponse(requestID: request.id, files: files.map {
+                ContentFile(path: $0.path, lines: [ContentLine(line: 1, text: "match", ranges: [[0, 5]])])
+            }, candidates: 3, read: 3, complete: true, next: nil, indexed: true, error: nil)
+        })
+        model.contentSearch = content
+        content.pattern = "match"
+        await content.search()
+        await model.search()
+        let deleted = files[0]
+        model.selectionState.select(paths: [deleted.path, files[1].path], primary: deleted.path)
+
+        let actions = FileActionState(confirmDeletion: { _, _, decision in decision(true) })
+        actions.onFileMutation = model.fileDidChange
+        await actions.permanentlyDelete(path: deleted.path, in: nil)
+
+        XCTAssertEqual(model.results.map(\.path), Array(files.dropFirst()).map(\.path))
+        XCTAssertEqual(model.controller?.totalCount, 2)
+        XCTAssertEqual(model.selectionState.selectedPaths, [files[1].path])
+        XCTAssertEqual(content.files.map(\.path), Array(files.dropFirst()).map(\.path))
+        XCTAssertEqual(content.controller.displayedOccurrences, 2)
     }
 
     func testConfirmationCannotDeleteAReplacementAtTheSamePath() async throws {
@@ -144,7 +174,91 @@ final class FileMutationTests: XCTestCase {
         await actions.moveToTrash(path: original.path)
         XCTAssertFalse(changed)
         XCTAssertTrue(actions.message?.hasPrefix("移到废纸篓失败") == true)
+        XCTAssertTrue(actions.message?.contains("请检查文件及所在文件夹的权限") == true)
         XCTAssertEqual(try String(contentsOf: original, encoding: .utf8), "keep me")
+    }
+
+    func testPendingTrashBlocksRepeatedRequestsUntilItReportsFailure() async throws {
+        let directory = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("report.txt")
+        try Data().write(to: file)
+        let requested = expectation(description: "已请求移到废纸篓")
+        var complete: (@Sendable (Error?) -> Void)?
+        let actions = FileActionState(recycle: { _, completion in
+            guard complete == nil else {
+                XCTFail("重复提交了移到废纸篓请求")
+                completion(CocoaError(.fileWriteUnknown))
+                return
+            }
+            complete = completion
+            requested.fulfill()
+        })
+        let trash = Task { await actions.moveToTrash(path: file.path) }
+        await fulfillment(of: [requested], timeout: 2)
+        XCTAssertEqual(actions.deletionProgress, "正在移到废纸篓…")
+        XCTAssertTrue(actions.isMutating)
+        await actions.moveToTrash(path: file.path)
+        complete?(CocoaError(.fileWriteNoPermission))
+        await trash.value
+        XCTAssertNil(actions.deletionProgress)
+        XCTAssertFalse(actions.isMutating)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testFileRemovedDuringConfirmationDisappearsWithAnExplanation() async throws {
+        let directory = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("report.txt")
+        try Data().write(to: file)
+        let model = SearchModel(arguments: ["FsearchSample", directory.path, "--smoke"])
+        await model.search()
+        XCTAssertEqual(model.results.map(\.path), [file.path])
+        let actions = FileActionState(confirmDeletion: { _, _, decision in
+            do {
+                try FileManager.default.removeItem(at: file)
+                decision(true)
+            } catch { XCTFail(error.localizedDescription); decision(false) }
+        })
+        actions.onFileMutation = model.fileDidChange
+        await actions.permanentlyDelete(path: file.path, in: nil)
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertTrue(actions.message?.contains("已不存在，已从结果中移除") == true)
+        XCTAssertNil(actions.deletionProgress)
+    }
+
+    func testPartialDirectoryDeletionClearsOnlyMissingDescendantsFromBothLists() async throws {
+        let directory = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let folder = directory.appendingPathComponent("report-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let removed = folder.appendingPathComponent("report1.txt")
+        let kept = folder.appendingPathComponent("report2.txt")
+        for file in [removed, kept] { try Data("match".utf8).write(to: file) }
+        let model = SearchModel(arguments: ["FsearchSample", directory.path, "--smoke"])
+        model.contentSearch = ContentSearchState(controller: ContentSearchController { request in
+            ContentSearchResponse(requestID: request.id, files: [removed, kept].map {
+                ContentFile(path: $0.path, lines: [])
+            }, candidates: 2, read: 2, complete: true, next: nil, indexed: false, error: nil)
+        })
+        model.contentSearch.pattern = "match"
+        await model.contentSearch.search()
+        await model.search()
+        model.selection = removed.path
+
+        let actions = FileActionState(confirmDeletion: { _, _, decision in decision(true) }, remove: { _ in
+            try FileManager.default.removeItem(at: removed)
+            throw CocoaError(.fileWriteNoPermission)
+        })
+        actions.onFileMutation = model.fileDidChange
+        actions.onDirectoryDeletionFailure = model.reconcileFailedDirectoryRemoval
+        await actions.permanentlyDelete(path: folder.path, in: nil)
+
+        XCTAssertEqual(Set(model.results.map(\.path)), [folder.path, kept.path])
+        XCTAssertEqual(model.controller?.totalCount, 2)
+        XCTAssertNil(model.selection)
+        XCTAssertEqual(model.contentSearch.files.map(\.path), [kept.path])
+        XCTAssertTrue(actions.message?.contains("没有权限删除") == true)
     }
 
     func testInfoPresenterReceivesLiteralUnicodeAndQuotedPath() throws {

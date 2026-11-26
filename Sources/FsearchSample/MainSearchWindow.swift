@@ -72,11 +72,18 @@ private struct InspectorRequestID: Hashable {
 }
 
 struct SearchView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var inspector = FileInspectorState()
-    @StateObject private var actions = FileActionState()
+    @StateObject private var actions: FileActionState
     @State private var showsIndexDetails = false
     @ObservedObject var model: SearchModel
     @ObservedObject var selectionState: SearchSelectionState
+
+    init(model: SearchModel, selectionState: SearchSelectionState, actions: FileActionState? = nil) {
+        self.model = model
+        self.selectionState = selectionState
+        _actions = StateObject(wrappedValue: actions ?? FileActionState())
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,6 +119,7 @@ struct SearchView: View {
         }
         .task {
             actions.onFileMutation = model.fileDidChange
+            actions.onDirectoryDeletionFailure = model.reconcileFailedDirectoryRemoval
             await model.runSmokeIfRequested()
         }
         .task(id: InspectorRequestID(snapshot: model.inspectorRefreshID,
@@ -287,6 +295,8 @@ struct SearchView: View {
                     actions: actions
                 )
                 .frame(minHeight: 250, maxHeight: .infinity)
+                .allowsHitTesting(actions.deletionProgress == nil)
+                .accessibilityHidden(actions.deletionProgress != nil)
 
                 if model.results.isEmpty {
                     resultsPlaceholder
@@ -295,6 +305,21 @@ struct SearchView: View {
                         .allowsHitTesting(false)
                 }
             }
+            .overlay {
+                if let progress = actions.deletionProgress {
+                    FDTheme.surfaceFill.opacity(0.65)
+                        .overlay {
+                            FDStatusPill(text: progress, symbol: "trash", tint: FDTheme.primary, showsProgress: true)
+                                .padding(10)
+                                .modifier(FDGlassSurface(radius: 18))
+                                .accessibilityIdentifier("file-deletion-progress")
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {}
+                        .transition(.opacity)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: actions.deletionProgress != nil)
             Divider().overlay(FDTheme.hairlineColor)
             resultsFooter
         }
@@ -415,13 +440,12 @@ struct SearchView: View {
             HStack(spacing: 8) {
                 PathNavigationView(path: singleSelectedPath, actions: actions)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(!actions.isMutating)
 
                 SearchFileActionIconRow(path: singleSelectedPath, actions: actions, size: 24)
             }
             if let message = actions.message {
-                Text(message)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                FDNoticeBanner(text: message)
                     .textSelection(.enabled)
                     .padding(.leading, footerTextLeadingInset)
             }
@@ -639,6 +663,7 @@ final class NonAnimatingTableView: NSTableView {
         }
     }
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard previewController?.isMutating != true else { return nil }
         let row = self.row(at: convert(event.locationInWindow, from: nil))
         guard row >= 0 else { return nil }
         if !selectedRowIndexes.contains(row) {
@@ -647,6 +672,7 @@ final class NonAnimatingTableView: NSTableView {
         return super.menu(for: event)
     }
     override func keyDown(with event: NSEvent) {
+        guard previewController?.deletionProgress == nil else { return }
         guard event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty else {
             super.keyDown(with: event)
             return
@@ -682,7 +708,7 @@ final class NonAnimatingTableView: NSTableView {
     }
 
     func moveSelection(by delta: Int) {
-        guard numberOfRows > 0 else { return }
+        guard previewController?.deletionProgress == nil, numberOfRows > 0 else { return }
         let current = selectedRow >= 0 ? selectedRow : 0
         let next = max(0, min(numberOfRows - 1, current + delta))
         selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
@@ -959,11 +985,17 @@ private struct ResultsTableView: NSViewRepresentable {
             return paths.first
         }
 
-        @objc func openSelection(_ sender: Any? = nil) { parent.actions.open(paths: selectionPaths(sender)) }
+        @objc func openSelection(_ sender: Any? = nil) {
+            guard !parent.actions.isMutating else { return }
+            parent.actions.open(paths: selectionPaths(sender))
+        }
         @objc func revealSelection(_ sender: Any? = nil) { parent.actions.reveal(paths: selectionPaths(sender)) }
         @objc func copySelection(_ sender: Any? = nil) { parent.actions.copy(paths: selectionPaths(sender)) }
         @objc func copyFilesSelection(_ sender: Any? = nil) { parent.actions.copyFiles(paths: selectionPaths(sender)) }
-        @objc func previewSelection(_ sender: Any? = nil) { parent.actions.togglePreview(paths: selectionPaths(sender)) }
+        @objc func previewSelection(_ sender: Any? = nil) {
+            guard !parent.actions.isMutating else { return }
+            parent.actions.togglePreview(paths: selectionPaths(sender))
+        }
 
         @objc func openWithApplication(_ sender: NSMenuItem) {
             guard let target = sender.representedObject as? OpenWithTarget else { return }

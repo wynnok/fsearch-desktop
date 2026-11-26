@@ -105,6 +105,20 @@ public struct NameSnapshot: Sendable {
         isComplete == other.isComplete && sort == other.sort && results == other.results
     }
 
+    func removingResults(where shouldRemove: (SearchResult) -> Bool) -> NameSnapshot {
+        let remaining = results.filter { !shouldRemove($0) }
+        guard remaining.count != results.count else { return self }
+        return NameSnapshot(copying: self, results: remaining)
+    }
+
+    private init(copying snapshot: NameSnapshot, results: [SearchResult]) {
+        id = UUID()
+        requestID = snapshot.requestID
+        isComplete = snapshot.isComplete
+        sort = snapshot.sort
+        self.results = results
+    }
+
     public func page(after cursor: SnapshotCursor? = nil, pageSize: Int = 50) throws -> SnapshotPage {
         guard pageSize > 0 else { throw SnapshotError.invalidPageSize }
         if let cursor, cursor.snapshotID != id { throw SnapshotError.foreignCursor }

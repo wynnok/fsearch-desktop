@@ -28,6 +28,9 @@ public final class ContentSearchController: ObservableObject {
     private let loader: Loader
     private var generation = 0
     private var currentRequest: ContentSearchRequest?
+    private var removedPaths = RemovedResultPaths()
+    private var restartContinuation = false
+    private var loadedPageCount = 0
 
     public init(loader: @escaping Loader) {
         self.loader = loader
@@ -43,16 +46,20 @@ public final class ContentSearchController: ObservableObject {
         generation += 1
         let currentGeneration = generation
         currentRequest = request
+        restartContinuation = false
+        loadedPageCount = 0
         response = nil
         files = []
         phase = .loading
         message = "文本查询中…"
 
         do {
-            let result = try await loader(request)
+            let loaded = try await loader(request)
             guard currentGeneration == generation else { return }
+            let result = excludingStaleResults(from: loaded)
             response = result
             files = result.files
+            loadedPageCount = 1
             finish(result, continued: false)
         } catch {
             guard currentGeneration == generation else { return }
@@ -76,21 +83,81 @@ public final class ContentSearchController: ObservableObject {
         let currentGeneration = generation
         phase = .loading
         message = "继续文本查询中…"
+        let restart = restartContinuation
+        restartContinuation = false
         do {
-            let result = try await loader(request.continuing(at: cursor))
+            var pageRequest = restart ? request : request.continuing(at: cursor)
+            let loaded = try await loader(pageRequest)
             guard currentGeneration == generation else { return }
-            appendUnique(result.files)
+            var result = excludingStaleResults(from: loaded)
+            if restart {
+                // Rebuild the loaded window against the new candidate order before publishing it.
+                let desiredCount = files.count + request.limit
+                var rebuilt: [ContentFile] = []
+                var seen: Set<Data> = []
+                var pages = 1
+                rebuilt.append(contentsOf: result.files.filter { seen.insert(Data($0.path.utf8)).inserted })
+                while pages <= loadedPageCount, rebuilt.count < desiredCount,
+                      let next = result.next, next > (pageRequest.cursor ?? 0) {
+                    pageRequest = request.continuing(at: next)
+                    let loaded = try await loader(pageRequest)
+                    guard currentGeneration == generation else { return }
+                    result = excludingStaleResults(from: loaded)
+                    rebuilt.append(contentsOf: result.files.filter { seen.insert(Data($0.path.utf8)).inserted })
+                    pages += 1
+                }
+                files = rebuilt
+                loadedPageCount = pages
+            } else {
+                appendUnique(result.files)
+                loadedPageCount += 1
+            }
             response = result
             finish(result, continued: true)
         } catch {
             guard currentGeneration == generation else { return }
+            restartContinuation = restart
             phase = .failed(error.localizedDescription)
             message = "继续文本查询失败：\(error.localizedDescription)"
         }
     }
 
+    public func removeResults(at path: String) {
+        removedPaths.insert(path)
+        applyRemoval(affecting: path) { isSameOrDescendantPath($0.path, of: path) }
+    }
+
+    package func removeMissingResults(under path: String) async {
+        removedPaths.insert(path)
+        let requestID = currentRequest?.id
+        let missing = await missingPaths(in: files.map(\.path), under: path)
+        guard currentRequest?.id == requestID else { return }
+        applyRemoval(affecting: path) { missing.contains(Data($0.path.utf8)) }
+    }
+
+    private func applyRemoval(affecting path: String, where shouldRemove: (ContentFile) -> Bool) {
+        if let scope = currentRequest?.scopePath, !isSameOrDescendantPath(path, of: scope),
+           !isSameOrDescendantPath(scope, of: path) { return }
+        files.removeAll(where: shouldRemove)
+        guard let response else {
+            restartContinuation = busy
+            return
+        }
+        let visible = response.removingFiles(where: shouldRemove)
+        self.response = visible
+        if response.next != nil {
+            // The engine cursor is an offset into candidates that can shift after deletion.
+            restartContinuation = true
+            if busy { generation += 1 }
+        }
+        if case .failed = phase { return }
+        finish(visible, continued: false)
+    }
+
     public func invalidate(message: String) {
         generation += 1
+        currentRequest = nil
+        restartContinuation = false
         response = nil
         files = []
         phase = .idle
@@ -115,10 +182,25 @@ public final class ContentSearchController: ObservableObject {
     }
 
     private func appendUnique(_ newFiles: [ContentFile]) {
-        let existing = Set(files.map(\.path))
-        files.append(contentsOf: newFiles.filter { !existing.contains($0.path) })
+        var existing = Set(files.map { Data($0.path.utf8) })
+        files.append(contentsOf: newFiles.filter { existing.insert(Data($0.path.utf8)).inserted })
+    }
+
+    private func excludingStaleResults(from response: ContentSearchResponse) -> ContentSearchResponse {
+        guard let shouldRemove = removedPaths.staleResultPredicate() else { return response }
+        return response.removingFiles { shouldRemove($0.path) }
     }
 }
+
+private extension ContentSearchResponse {
+    func removingFiles(where shouldRemove: (ContentFile) -> Bool) -> ContentSearchResponse {
+        ContentSearchResponse(
+            requestID: requestID, files: files.filter { !shouldRemove($0) }, candidates: candidates,
+            read: read, complete: complete, next: next, indexed: indexed, error: error
+        )
+    }
+}
+
 public extension ContentSearchRequest {
     func continuing(at cursor: Int) -> ContentSearchRequest {
         ContentSearchRequest(

@@ -298,6 +298,64 @@ final class SearchWindowLayoutTests: XCTestCase {
         XCTAssertEqual(menu.items.first?.title, "打开 \(model.results.count) 个项目")
     }
 
+    func testPermanentDeleteFromResultMenuBlocksTableInputUntilRemovalReturns() async throws {
+        _ = NSApplication.shared
+        let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".build/deletion-window-tests/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let removed = directory.appendingPathComponent("report1.txt")
+        let kept = directory.appendingPathComponent("report2.txt")
+        for file in [removed, kept] { try Data().write(to: file) }
+        let started = expectation(description: "确认后开始永久删除")
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let actions = FileActionState(confirmDeletion: { _, _, decision in decision(true) }, remove: { url in
+            started.fulfill()
+            guard release.wait(timeout: .now() + 5) == .success else { throw CocoaError(.fileWriteUnknown) }
+            try FileManager.default.removeItem(at: url)
+        })
+        let model = SearchModel(arguments: ["FsearchSample", directory.path, "--smoke"])
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: SearchView(model: model, selectionState: model.selectionState, actions: actions))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        await model.search()
+        model.selection = removed.path
+        try await Task.sleep(for: .milliseconds(200))
+        let table = try XCTUnwrap(firstView(of: NonAnimatingTableView.self, in: host))
+        XCTAssertEqual(table.selectedRow, 0)
+        let menu = try XCTUnwrap(table.menu)
+        menu.delegate?.menuNeedsUpdate?(menu)
+        let command = try XCTUnwrap(menu.items.first { $0.title == "永久删除…" })
+        XCTAssertTrue(command.isEnabled)
+        XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(command.action), to: command.target, from: command))
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(actions.deletionProgress, "正在永久删除…")
+        XCTAssertEqual(table.numberOfRows, 2)
+        let arrow = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                                   timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                   characters: "", charactersIgnoringModifiers: "",
+                                                   isARepeat: false, keyCode: 125))
+        table.keyDown(with: arrow)
+        XCTAssertEqual(table.selectedRow, 0)
+        menu.delegate?.menuNeedsUpdate?(menu)
+        XCTAssertFalse(try XCTUnwrap(menu.items.first { $0.title == "永久删除…" }).isEnabled)
+
+        release.signal()
+        for _ in 0..<100 where actions.isMutating || table.numberOfRows != 1 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(actions.deletionProgress)
+        XCTAssertEqual(table.numberOfRows, 1)
+        XCTAssertEqual(model.results.map(\.path), [kept.path])
+        XCTAssertNil(model.selection)
+    }
+
     private func firstView<T: NSView>(of type: T.Type, in view: NSView) -> T? {
         if let match = view as? T { return match }
         return view.subviews.lazy.compactMap { self.firstView(of: type, in: $0) }.first

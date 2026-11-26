@@ -308,13 +308,12 @@ final class SearchModel: ObservableObject {
     func refresh() { Task { await search(refresh: !isEngineMode) } }
 
     func fileDidChange(_ oldPath: String, _ newPath: String?) {
-        if selectionState.selectedPaths.contains(oldPath) {
-            if let newPath { pendingRenames[oldPath] = newPath }
-            else {
-                var paths = selectionState.selectedPaths
-                paths.remove(oldPath)
-                selectionState.select(paths: paths, primary: selection == oldPath ? nil : selection)
-            }
+        if let newPath {
+            if selectionState.selectedPaths.contains(oldPath) { pendingRenames[oldPath] = newPath }
+        } else {
+            controller?.removeResults(at: oldPath)
+            contentSearch.controller.removeResults(at: oldPath)
+            removeSelection { isSameOrDescendantPath($0, of: oldPath) }
         }
         if !isEngineMode, let service {
             Task {
@@ -324,6 +323,21 @@ final class SearchModel: ObservableObject {
                     await pollService()
                 } catch { applicationMessage = "文件已改变，但结果刷新失败，请重新查询。" }
             }
+        }
+    }
+
+    func reconcileFailedDirectoryRemoval(_ path: String) async {
+        await controller?.removeMissingResults(under: path)
+        await contentSearch.controller.removeMissingResults(under: path)
+        let missing = await missingPaths(in: Array(selectionState.selectedPaths), under: path)
+        removeSelection { missing.contains(Data($0.utf8)) }
+    }
+
+    private func removeSelection(where shouldRemove: (String) -> Bool) {
+        let paths = selectionState.selectedPaths.filter { !shouldRemove($0) }
+        if paths != selectionState.selectedPaths {
+            selectionState.select(paths: paths, primary: selection)
+            selectionMessage = nil
         }
     }
 

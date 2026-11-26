@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import FsearchService
 import Quartz
 import SwiftUI
 
@@ -7,15 +8,19 @@ import SwiftUI
 final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
     typealias DeletionConfirmation = @MainActor (URL, NSWindow?, @escaping @MainActor (Bool) -> Void) -> Void
     typealias Recycler = @MainActor (URL, @escaping @Sendable (Error?) -> Void) -> Void
+    typealias PermanentRemover = @Sendable (URL) throws -> Void
     typealias InformationPresenter = @MainActor (URL) throws -> Void
     typealias BatchDeletionConfirmation = @MainActor ([URL], NSWindow?, @escaping @MainActor (Bool) -> Void) -> Void
     private let confirmBatchDeletion: BatchDeletionConfirmation
     private let confirmDeletion: DeletionConfirmation
     private let recycle: Recycler
+    private let remove: PermanentRemover
     private let information: InformationPresenter
     @Published private(set) var message: String?
     @Published private(set) var isMutating = false
+    @Published private(set) var deletionProgress: String?
     var onFileMutation: ((String, String?) -> Void)?
+    var onDirectoryDeletionFailure: ((String) async -> Void)?
     private(set) var previewURL: URL?
     private(set) var previewURLs: [URL] = []
     private(set) var openedURL: URL?
@@ -25,10 +30,12 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     init(confirmDeletion: @escaping DeletionConfirmation = FileActionState.presentDeletionConfirmation,
          confirmBatchDeletion: @escaping BatchDeletionConfirmation = FileActionState.presentBatchDeletionConfirmation,
          recycle: @escaping Recycler = FileActionState.recycleItem,
+         remove: @escaping PermanentRemover = { try FileManager.default.removeItem(at: $0) },
          information: @escaping InformationPresenter = FinderInformation.show) {
         self.confirmDeletion = confirmDeletion
         self.confirmBatchDeletion = confirmBatchDeletion
         self.recycle = recycle
+        self.remove = remove
         self.information = information
         super.init()
     }
@@ -185,34 +192,32 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     }
 
     func permanentlyDelete(path: String?, in window: NSWindow?) async {
-        guard !isMutating, let url = mutationURL(path: path) else { return }
+        guard !isMutating, let url = mutationURL(path: path, removing: true) else { return }
         isMutating = true
-        defer { isMutating = false }
+        defer { deletionProgress = nil; isMutating = false }
         do {
             let identity = try Self.entryIdentity(url)
             let confirmed = await withCheckedContinuation { continuation in
                 confirmDeletion(url, window) { continuation.resume(returning: $0) }
             }
             guard confirmed else { return }
-            let deleted = try await Task.detached(priority: .userInitiated) {
-                guard try Self.entryIdentity(url) == identity else { return false }
-                try FileManager.default.removeItem(at: url)
-                return true
-            }.value
+            deletionProgress = "正在永久删除…"
+            let deleted = try await removeConfirmedItem(at: url, identity: identity)
             guard deleted else {
                 message = "项目在确认期间已改变，请重新选择后操作。"
                 return
             }
             finishMutation(url, newURL: nil, message: "已永久删除“\(url.lastPathComponent)”")
         } catch {
-            message = "永久删除失败：\(error.localizedDescription)"
+            message = "永久删除失败：\(await deletionOperationFailure(error, at: url))"
         }
     }
 
     func moveToTrash(path: String?) async {
-        guard !isMutating, let url = mutationURL(path: path) else { return }
+        guard !isMutating, let url = mutationURL(path: path, removing: true) else { return }
         isMutating = true
-        defer { isMutating = false }
+        deletionProgress = "正在移到废纸篓…"
+        defer { deletionProgress = nil; isMutating = false }
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 recycle(url) { error in
@@ -222,7 +227,7 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
             }
             finishMutation(url, newURL: nil, message: "已移到废纸篓“\(url.lastPathComponent)”")
         } catch {
-            message = "移到废纸篓失败：\(error.localizedDescription)"
+            message = "移到废纸篓失败：\(await deletionOperationFailure(error, at: url))"
         }
     }
 
@@ -239,10 +244,10 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
     private func mutate(paths: [String], permanently: Bool, in window: NSWindow?) async {
         guard !isMutating, !paths.isEmpty else { return }
         isMutating = true
-        defer { isMutating = false }
+        defer { deletionProgress = nil; isMutating = false }
         var errors: [String] = []
         let urls = paths.compactMap { path -> URL? in
-            guard let url = mutationURL(path: path) else {
+            guard let url = mutationURL(path: path, removing: true) else {
                 errors.append("\(path)：\(message ?? "无法访问")")
                 return nil
             }
@@ -259,25 +264,23 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
         if permanently {
             for url in targets {
                 do { identities[url] = try Self.entryIdentity(url) }
-                catch { errors.append("\(url.path)：\(error.localizedDescription)") }
+                catch { errors.append("\(url.path)：\(deletionFailure(error, at: url))") }
             }
             guard !identities.isEmpty else { message = errors.joined(separator: "\n"); return }
             let confirmed = await withCheckedContinuation { continuation in
-                confirmBatchDeletion(targets, window) { continuation.resume(returning: $0) }
+                confirmBatchDeletion(targets.filter { identities[$0] != nil }, window) { continuation.resume(returning: $0) }
             }
             guard confirmed else { return }
         }
+        message = nil
+        deletionProgress = permanently ? "正在永久删除…" : "正在移到废纸篓…"
         var succeeded = 0
         for url in targets {
             do {
                 if permanently {
                     guard let identity = identities[url] else { continue }
-                    let deleted = try await Task.detached(priority: .userInitiated) {
-                        guard try Self.entryIdentity(url) == identity else { return false }
-                        try FileManager.default.removeItem(at: url)
-                        return true
-                    }.value
-                    guard deleted else { errors.append("\(url.path)：项目在确认期间已改变"); continue }
+                    let deleted = try await removeConfirmedItem(at: url, identity: identity)
+                    guard deleted else { errors.append("\(url.path)：项目在确认期间已改变，请重新选择后操作。"); continue }
                 } else {
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         recycle(url) { error in
@@ -287,10 +290,8 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
                     }
                 }
                 succeeded += 1
-                for affected in urls where affected == url || affected.path.hasPrefix(url.path + "/") {
-                    finishMutation(affected, newURL: nil, message: "")
-                }
-            } catch { errors.append("\(url.path)：\(error.localizedDescription)") }
+                finishMutation(url, newURL: nil, message: nil)
+            } catch { errors.append("\(url.path)：\(await deletionOperationFailure(error, at: url))") }
         }
         message = "\(permanently ? "永久删除" : "移到废纸篓")：成功 \(succeeded) 项，失败 \(errors.count) 项"
             + (errors.isEmpty ? "" : "\n" + errors.joined(separator: "\n"))
@@ -349,7 +350,16 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
         return (device.uint64Value, inode.uint64Value)
     }
 
-    private func mutationURL(path: String?) -> URL? {
+    private func removeConfirmedItem(at url: URL, identity: (device: UInt64, inode: UInt64)) async throws -> Bool {
+        let remove = self.remove
+        return try await Task.detached(priority: .userInitiated) {
+            guard try Self.entryIdentity(url) == identity else { return false }
+            try remove(url)
+            return true
+        }.value
+    }
+
+    private func mutationURL(path: String?, removing: Bool = false) -> URL? {
         guard let path else { message = "请先选择结果"; return nil }
         let url = URL(fileURLWithPath: path)
         guard url.path != "/" else { message = "不能修改或删除根目录"; return nil }
@@ -358,15 +368,41 @@ final class FileActionState: NSObject, ObservableObject, @preconcurrency QLPrevi
             message = nil
             return url
         } catch {
-            message = "项目已移动、删除或无法访问，请重新选择后操作。"
+            message = removing ? deletionFailure(error, at: url) : "项目已移动、删除或无法访问，请重新选择后操作。"
             return nil
         }
     }
 
-    private func finishMutation(_ url: URL, newURL: URL?, message: String) {
-        if previewURLs.contains(url) { updatePreview(paths: previewURLs.filter { $0 != url }.map(\.path)) }
-        self.message = message
+    private func deletionFailure(_ error: Error, at url: URL) -> String {
+        do {
+            _ = try FileManager.default.attributesOfItem(atPath: url.path)
+        } catch let lookup as CocoaError where lookup.code == .fileNoSuchFile || lookup.code == .fileReadNoSuchFile {
+            finishMutation(url, newURL: nil, message: nil)
+            return "“\(url.lastPathComponent)”已不存在，已从结果中移除。"
+        } catch {
+            // The entry may still exist even if its attributes cannot be read.
+        }
+        if let error = error as? CocoaError, [.fileReadNoPermission, .fileWriteNoPermission].contains(error.code) {
+            return "没有权限删除“\(url.lastPathComponent)”，请检查文件及所在文件夹的权限后重试。"
+        }
+        return "无法删除“\(url.lastPathComponent)”。\(error.localizedDescription)"
+    }
+
+    private func deletionOperationFailure(_ error: Error, at url: URL) async -> String {
+        let message = deletionFailure(error, at: url)
+        if (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeDirectory {
+            await onDirectoryDeletionFailure?(url.path)
+        }
+        return message
+    }
+
+    private func finishMutation(_ url: URL, newURL: URL?, message: String?) {
+        let remaining = previewURLs.filter {
+            newURL == nil ? !isSameOrDescendantPath($0.path, of: url.path) : $0 != url
+        }
+        if remaining.count != previewURLs.count { updatePreview(paths: remaining.map(\.path)) }
         onFileMutation?(url.path, newURL?.path)
+        self.message = message
     }
 
     func togglePreview(path: String?) { togglePreview(paths: path.map { [$0] } ?? []) }

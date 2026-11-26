@@ -20,6 +20,7 @@ public final class SnapshotQueryController: ObservableObject {
     private var generation = 0
     private var task: Task<NameSnapshot, Error>?
     private var currentQuery: (request: SearchRequest, sort: NameSort, maximumResults: Int?, pageSize: Int)?
+    private var removedPaths = RemovedResultPaths()
 
     public init(loader: @escaping Loader) { self.loader = loader }
 
@@ -62,8 +63,10 @@ public final class SnapshotQueryController: ObservableObject {
             let result = try await work.value
             guard currentGeneration == generation else { return }
             try Task.checkCancellation()
-            let page = try result.page(pageSize: pageSize)
-            snapshot = result
+            guard let visible = await excludingStaleResults(from: result, generation: currentGeneration) else { return }
+            try Task.checkCancellation()
+            let page = try visible.page(pageSize: pageSize)
+            snapshot = visible
             results = page.results
             nextCursor = page.nextCursor
             phase = result.isComplete ? .complete : .partial
@@ -98,6 +101,37 @@ public final class SnapshotQueryController: ObservableObject {
         self.nextCursor = page.nextCursor
     }
 
+    public func removeResults(at path: String) {
+        removedPaths.insert(path)
+        guard let snapshot else {
+            results.removeAll { isSameOrDescendantPath($0.path, of: path) }
+            return
+        }
+        let visible = snapshot.removingResults { isSameOrDescendantPath($0.path, of: path) }
+        publishRemoval(visible)
+    }
+
+    package func removeMissingResults(under path: String) async {
+        removedPaths.insert(path)
+        let currentGeneration = generation
+        if let snapshot {
+            guard let visible = await excludingStaleResults(from: snapshot, generation: currentGeneration),
+                  self.snapshot?.id == snapshot.id else { return }
+            publishRemoval(visible)
+        } else {
+            let missing = await missingPaths(in: results.map(\.path), under: path)
+            guard generation == currentGeneration, snapshot == nil else { return }
+            results.removeAll { missing.contains(Data($0.path.utf8)) }
+        }
+    }
+
+    private func publishRemoval(_ visible: NameSnapshot) {
+        guard snapshot?.id != visible.id, let page = try? visible.page(pageSize: max(1, results.count)) else { return }
+        snapshot = visible
+        results = page.results
+        nextCursor = page.nextCursor
+    }
+
     // The upstream service already applied its notifications; no second watcher.
     public func refreshCurrentQuery() async {
         guard let query = currentQuery, task == nil,
@@ -111,10 +145,12 @@ public final class SnapshotQueryController: ObservableObject {
             let result = try await work.value
             guard generation == refreshGeneration else { return }
             try Task.checkCancellation()
-            guard snapshot?.hasSameResults(as: result) != true else { return }
+            guard let visible = await excludingStaleResults(from: result, generation: refreshGeneration) else { return }
+            try Task.checkCancellation()
+            guard snapshot?.hasSameResults(as: visible) != true else { return }
             let loadedWindow = max(query.pageSize, results.count)
-            let page = try result.page(pageSize: loadedWindow)
-            snapshot = result
+            let page = try visible.page(pageSize: loadedWindow)
+            snapshot = visible
             results = page.results
             nextCursor = page.nextCursor
             phase = result.isComplete ? .complete : .partial
@@ -122,6 +158,19 @@ public final class SnapshotQueryController: ObservableObject {
             guard generation == refreshGeneration else { return }
             phase = error is CancellationError ? .cancelled : .failed(error.localizedDescription)
         }
+    }
+
+    private func excludingStaleResults(from snapshot: NameSnapshot, generation requestedGeneration: Int) async -> NameSnapshot? {
+        while generation == requestedGeneration {
+            let removed = removedPaths
+            guard removed.revision > 0 else { return snapshot }
+            let visible = await Task.detached(priority: .userInitiated) {
+                guard let shouldRemove = removed.staleResultPredicate() else { return snapshot }
+                return snapshot.removingResults { shouldRemove($0.path) }
+            }.value
+            if removed.revision == removedPaths.revision, generation == requestedGeneration { return visible }
+        }
+        return nil
     }
 
     public func ensureVisible(path: String) throws -> Bool {
